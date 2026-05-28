@@ -95,7 +95,7 @@ class _ResponsiveScaffoldState extends State<ResponsiveScaffold> {
         floatingActionButton: widget.floatingActionButton,
         bottomNavigationBar:
             widget.bottomNavigationBar ??
-            (destinations.isEmpty
+            (destinations.length < 2
                 ? null
                 : NavigationBar(
                     selectedIndex: selectedIndex == -1 ? 0 : selectedIndex,

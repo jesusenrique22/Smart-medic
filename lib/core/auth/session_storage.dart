@@ -1,16 +1,19 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
-
+import 'session_storage_store.dart';
 import '../../features/auth/data/role_mapper.dart';
 import '../../features/auth/domain/models/user.dart';
 
 const _sessionKey = 'vita_os_session';
 
+/// Guarda la sesión JWT + usuario.
+///
+/// En **web** usa `sessionStorage` (una sesión por pestaña) para poder abrir
+/// paciente y médico en dos pestañas sin pisarse el login.
+/// En móvil/escritorio usa SharedPreferences.
 class SessionStorage {
   static Future<void> save({required User user, required String token}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
+    await SessionStorageStore.setString(
       _sessionKey,
       jsonEncode({
         'token': token,
@@ -27,8 +30,7 @@ class SessionStorage {
   }
 
   static Future<({User user, String token})?> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_sessionKey);
+    final raw = await SessionStorageStore.getString(_sessionKey);
     if (raw == null || raw.isEmpty) return null;
 
     try {
@@ -54,7 +56,6 @@ class SessionStorage {
   }
 
   static Future<void> clear() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_sessionKey);
+    await SessionStorageStore.remove(_sessionKey);
   }
 }

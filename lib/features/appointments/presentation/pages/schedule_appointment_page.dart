@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/appointment_datetime.dart';
 import '../../../../core/widgets/app_design.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../../core/widgets/safe_avatar.dart';
@@ -240,7 +241,7 @@ class _ScheduleAppointmentPageState extends State<ScheduleAppointmentPage> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            'Cita agendada con ${doctor.name} · ${slot.startTime}',
+            'Cita agendada con ${doctor.name} · ${formatWallClockTime12h(slot.startTime)}',
           ),
           backgroundColor: AppColors.secondary,
           behavior: SnackBarBehavior.floating,
@@ -396,7 +397,7 @@ class _ScheduleAppointmentPageState extends State<ScheduleAppointmentPage> {
                                       : const Icon(Icons.event_available_rounded),
                                   label: Text(
                                     _pickedSlot != null
-                                        ? 'Agendar cita · ${_pickedSlot!.startTime}'
+                                        ? 'Agendar cita · ${formatWallClockTime12h(_pickedSlot!.startTime)}'
                                         : 'Agendar cita',
                                     style: const TextStyle(
                                       fontSize: 16,
@@ -1012,7 +1013,7 @@ class _ScheduleAppointmentPageState extends State<ScheduleAppointmentPage> {
                     child: Column(
                       children: [
                         Text(
-                          slot.startTime,
+                          formatWallClockTime12h(slot.startTime),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,

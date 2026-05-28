@@ -418,6 +418,7 @@ class _MedicalHistoryPageState extends State<MedicalHistoryPage> {
       await _chat.sendMessage(
         conversationId: conv.id,
         text: text,
+        kind: ChatMessageKind.clinical,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

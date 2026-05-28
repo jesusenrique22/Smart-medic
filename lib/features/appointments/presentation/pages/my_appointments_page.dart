@@ -3,6 +3,7 @@ import '../../../../core/auth/app_session.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/appointment_datetime.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../../core/widgets/safe_avatar.dart';
 import '../../../auth/domain/models/role.dart';
@@ -142,16 +143,7 @@ class _MyAppointmentsPageState extends State<MyAppointmentsPage>
     }
   }
 
-  String _fmt(DateTime d) {
-    const months = [
-      'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-      'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
-    ];
-    final h = d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour);
-    final period = d.hour >= 12 ? 'PM' : 'AM';
-    final m = d.minute.toString().padLeft(2, '0');
-    return '${d.day} ${months[d.month - 1]}, $h:$m $period';
-  }
+  String _fmt(DateTime d) => formatAppointmentDateTime(d);
 
   @override
   Widget build(BuildContext context) {

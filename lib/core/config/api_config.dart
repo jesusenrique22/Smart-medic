@@ -6,4 +6,11 @@ class ApiConfig {
     if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
     return 'http://localhost:3000';
   }
+
+  /// URL del servidor Socket.IO (mismo host que la API por defecto).
+  static String get socketUrl {
+    final fromEnv = dotenv.env['SOCKET_URL'];
+    if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
+    return baseUrl;
+  }
 }

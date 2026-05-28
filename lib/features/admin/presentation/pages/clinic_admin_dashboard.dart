@@ -5,6 +5,7 @@ import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_design.dart';
+import '../../../../core/widgets/profile_ui.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../../core/widgets/safe_avatar.dart';
 import '../../data/clinic_admin_api_service.dart';
@@ -62,7 +63,7 @@ class _ClinicAdminDashboardState extends State<ClinicAdminDashboard> {
   }
 
   Future<void> _openInviteDoctor() async {
-    final changed = await Navigator.pushNamed<bool>(
+    final changed = await Navigator.pushNamed(
       context,
       AppRoutes.clinicAssignDoctor,
     );
@@ -145,8 +146,6 @@ class _ClinicAdminDashboardState extends State<ClinicAdminDashboard> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _buildHero(name),
-                        const SizedBox(height: 20),
-                        _buildStats(),
                         const SizedBox(height: 24),
                         _buildQuickActions(),
                         if (_data!.pendingInvitations.isNotEmpty) ...[
@@ -185,104 +184,44 @@ class _ClinicAdminDashboardState extends State<ClinicAdminDashboard> {
   }
 
   Widget _buildHero(String facilityName) {
-    return AppHeroPanel(
-      color: AppColors.primaryDark,
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const AppStatusPill(
-                  label: 'Administración de clínica',
-                  color: Colors.white,
-                  icon: Icons.local_hospital_rounded,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  facilityName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  AppSession.currentUser?.name ?? 'Administrador',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Icon(
-            Icons.medical_services_rounded,
-            size: 56,
-            color: Colors.white.withValues(alpha: 0.35),
-          ),
-        ],
-      ),
-    );
-  }
+    final d = _data;
+    final adminName = AppSession.currentUser?.name ?? 'Administrador';
 
-  Widget _buildStats() {
-    final d = _data!;
-    return Row(
-      children: [
-        Expanded(
-          child: _statCard(
-            'Médicos en sede',
-            '${d.doctorsCount}',
-            Icons.people_rounded,
-            AppColors.primary,
-          ),
+    return ProfileGradientHeader(
+      name: facilityName,
+      subtitle: adminName,
+      badgeLabel: 'Administración de clínica',
+      badgeIcon: Icons.local_hospital_rounded,
+      badgeColor: const Color(0xFF6EE7B7),
+      leading: CircleAvatar(
+        radius: 32,
+        backgroundColor: Colors.white.withValues(alpha: 0.2),
+        child: const Icon(
+          Icons.admin_panel_settings_rounded,
+          color: Colors.white,
+          size: 32,
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _statCard(
-            'Citas hoy',
-            '${d.appointmentsToday}',
-            Icons.event_available_rounded,
-            Colors.teal,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _statCard(String label, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
-              color: color,
-            ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
+      stats: d == null
+          ? const []
+          : [
+              ProfileStatChip(
+                icon: Icons.people_rounded,
+                label: 'Médicos en sede',
+                value: '${d.doctorsCount}',
+              ),
+              ProfileStatChip(
+                icon: Icons.event_available_rounded,
+                label: 'Citas hoy',
+                value: '${d.appointmentsToday}',
+              ),
+              if (d.pendingInvitationsCount > 0)
+                ProfileStatChip(
+                  icon: Icons.mail_outline_rounded,
+                  label: 'Invitaciones',
+                  value: '${d.pendingInvitationsCount}',
+                ),
+            ],
     );
   }
 

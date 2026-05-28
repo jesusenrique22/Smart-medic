@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import '../../../../core/auth/app_session.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/appointment_datetime.dart';
 import '../../../../core/widgets/app_design.dart';
+import '../../../../core/widgets/profile_ui.dart';
 import '../../../notifications/presentation/widgets/notification_badge.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../appointments/data/appointment_api_service.dart';
 import '../../../appointments/domain/models/appointment.dart';
+import '../../../appointments/presentation/widgets/appointment_reminder_host.dart';
 import '../../../patient_profile/data/patient_profile_repository.dart';
 
 /// Content of the Patient Dashboard page – now used inside ResponsiveScaffold.
@@ -66,53 +69,22 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
       PatientProfileRepository.activeProfile?.medicalHistoryCompleted ?? false;
 
   Widget _buildHistoryReminder(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => Navigator.pushNamed(context, AppRoutes.clinicalHistory),
-        borderRadius: BorderRadius.circular(20),
-        child: Ink(
-          decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.amber.shade200),
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(Icons.medical_information_outlined, color: Colors.amber.shade900),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  'Tu historia clínica está incompleta. Toca aquí para completarla.',
-                  style: TextStyle(
-                    color: Colors.amber.shade900,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Icon(Icons.chevron_right, color: Colors.amber.shade800),
-            ],
-          ),
-        ),
-      ),
+    return ProfileAlertBanner(
+      message: 'Tu historia clínica está incompleta. Toca aquí para completarla.',
+      icon: Icons.medical_information_outlined,
+      color: Colors.amber.shade800,
+      onTap: () => Navigator.pushNamed(context, AppRoutes.clinicalHistory),
     );
   }
 
-  String _formatApptWhen(DateTime dt) {
-    final local = dt.toLocal();
-    final h = local.hour > 12 ? local.hour - 12 : (local.hour == 0 ? 12 : local.hour);
-    final period = local.hour >= 12 ? 'PM' : 'AM';
-    final m = local.minute.toString().padLeft(2, '0');
-    final date =
-        '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
-    return '$date · $h:$m $period';
-  }
+  String _formatApptWhen(DateTime dt) => formatAppointmentDateTimeLong(dt);
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+
     return AppPage(
-      padding: const EdgeInsets.all(28),
+      padding: EdgeInsets.all(isCompact ? 16 : 28),
       maxWidth: 1280,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -166,143 +138,42 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
     final displayName = profile?.fullName ?? user?.name ?? 'Paciente';
     final firstName = displayName.split(' ').first;
 
-    return Container(
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primaryDark, AppColors.primary, AppColors.info],
+    return ProfileGradientHeader(
+      name: 'Hola, $firstName',
+      subtitle:
+          'Tu centro de control para atención médica, emergencias y seguimiento clínico.',
+      badgeLabel: 'Paciente activo',
+      badgeIcon: Icons.verified_rounded,
+      badgeColor: Colors.white,
+      actions: [
+        const NotificationBadge(onDarkBackground: true),
+        ProfileHeaderIconButton(
+          tooltip: 'Cerrar sesión',
+          onDarkBackground: true,
+          icon: Icons.logout_rounded,
+          onPressed: () {
+            AppSession.clear();
+            Navigator.pushReplacementNamed(context, AppRoutes.login);
+          },
         ),
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.28),
-            blurRadius: 32,
-            offset: const Offset(0, 18),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const AppStatusPill(
-                      label: 'Paciente activo',
-                      color: Colors.white,
-                      icon: Icons.verified_rounded,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Hola, $firstName',
-                      style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                        color: Colors.white,
-                        fontSize: 40,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Tu centro de control para atención médica, emergencias y seguimiento clínico.',
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.84),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 18),
-              Column(
-                children: [
-                  const NotificationBadge(),
-                  const SizedBox(height: 12),
-                  IconButton.filledTonal(
-                    tooltip: 'Cerrar sesión',
-                    icon: const Icon(Icons.logout_rounded),
-                    onPressed: () {
-                      AppSession.clear();
-                      Navigator.pushReplacementNamed(context, AppRoutes.login);
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 26),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _buildHeroStat(
-                context,
-                icon: Icons.favorite_rounded,
-                label: 'Estado',
-                value: 'Estable',
-              ),
-              _buildHeroStat(
-                context,
-                icon: Icons.bloodtype_rounded,
-                label: 'Sangre',
-                value: profile?.bloodType ?? 'O+',
-              ),
-              _buildHeroStat(
-                context,
-                icon: Icons.shield_rounded,
-                label: 'Seguro',
-                value: profile?.insuranceProvider ?? 'Pendiente',
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeroStat(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Container(
-      width: 160,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
-                ),
-                Text(
-                  value,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      ],
+      stats: [
+        ProfileStatChip(
+          icon: Icons.favorite_rounded,
+          label: 'Estado',
+          value: 'Estable',
+        ),
+        ProfileStatChip(
+          icon: Icons.bloodtype_rounded,
+          label: 'Sangre',
+          value: profile?.bloodType ?? 'Sin registrar',
+        ),
+        ProfileStatChip(
+          icon: Icons.shield_rounded,
+          label: 'Seguro',
+          value: profile?.insuranceProvider ?? 'Pendiente',
+        ),
+      ],
     );
   }
 
@@ -410,14 +281,13 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
                 crossAxisCount: 2,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
-                mainAxisExtent: 118,
+                mainAxisExtent: 76,
               ),
               itemCount: actions.length,
               itemBuilder: (context, index) {
                 final action = actions[index];
                 return _EssentialActionCard(
                   action: action,
-                  compact: true,
                   onTap: () => Navigator.pushNamed(context, action.route),
                 );
               },
@@ -762,12 +632,10 @@ class _DashboardAction {
 class _EssentialActionCard extends StatelessWidget {
   final _DashboardAction action;
   final VoidCallback onTap;
-  final bool compact;
 
   const _EssentialActionCard({
     required this.action,
     required this.onTap,
-    this.compact = false,
   });
 
   @override
@@ -784,89 +652,41 @@ class _EssentialActionCard extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(24),
           child: Padding(
-            padding: EdgeInsets.all(compact ? 14 : 18),
-            child: compact
-                ? Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: action.isPrimary
-                              ? Colors.white.withValues(alpha: 0.18)
-                              : action.color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(action.icon, color: foreground, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              action.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    color:
-                                        action.isPrimary ? Colors.white : null,
-                                    fontSize: 14,
-                                  ),
-                            ),
-                            Text(
-                              action.subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
-                                    fontSize: 12,
-                                    color: action.isPrimary
-                                        ? Colors.white.withValues(alpha: 0.78)
-                                        : AppColors.textSecondary,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  )
-                : Column(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: action.isPrimary
+                        ? Colors.white.withValues(alpha: 0.18)
+                        : action.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(action.icon, color: foreground, size: 22),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: action.isPrimary
-                              ? Colors.white.withValues(alpha: 0.18)
-                              : action.color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(action.icon, color: foreground, size: 26),
-                      ),
-                      const Spacer(),
                       Text(
                         action.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           color: action.isPrimary ? Colors.white : null,
-                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 6),
                       Text(
                         action.subtitle,
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: action.isPrimary
                               ? Colors.white.withValues(alpha: 0.78)
                               : AppColors.textSecondary,
@@ -874,6 +694,9 @@ class _EssentialActionCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1010,9 +833,13 @@ class PatientDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ResponsiveScaffold(
-      title: Text('Inicio'),
-      child: PatientDashboardPage(),
+    final apptService = AppointmentApiService();
+    return AppointmentReminderHost(
+      loadAppointments: apptService.getMyAppointments,
+      child: const ResponsiveScaffold(
+        title: Text('Inicio'),
+        child: PatientDashboardPage(),
+      ),
     );
   }
 }

@@ -8,6 +8,9 @@ import 'features/patient_profile/data/patient_profile_repository.dart';
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_navigation.dart';
 import 'core/navigation/app_routes.dart';
+import 'core/services/app_realtime.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,9 +29,11 @@ Future<void> main() async {
     }
   }
   final hasSession = await AppSession.restore();
+  AppSession.onSessionEnded = AppRealtime.disconnect;
   if (hasSession && AppSession.currentUser?.role == Role.patient) {
     await PatientProfileRepository.refreshFromApi();
   }
+  AppRealtime.bindNavigator(appNavigatorKey);
   runApp(VitaOSApp(hasSession: hasSession));
 }
 
@@ -44,6 +49,8 @@ class VitaOSApp extends StatelessWidget {
         : AppRoutes.login;
 
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
+      navigatorObservers: [RealtimeNavigatorObserver()],
       title: 'VITA OS',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,

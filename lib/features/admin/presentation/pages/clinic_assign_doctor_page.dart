@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/app_design.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../../core/widgets/safe_avatar.dart';
 import '../../data/clinic_admin_api_service.dart';
@@ -63,52 +64,12 @@ class _ClinicAssignDoctorPageState extends State<ClinicAssignDoctorPage> {
   }
 
   Future<void> _invite(ClinicDoctorListItem doctor) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Enviar invitación'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              doctor.name,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            Text(
-              doctor.email,
-              style: const TextStyle(color: AppColors.textSecondary),
-            ),
-            if (doctor.specialties.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                doctor.specialties.join(' · '),
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            const Text(
-              'Se le enviará una notificación. El médico podrá aceptar o rechazar la solicitud desde su cuenta.',
-              style: TextStyle(fontSize: 13),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(ctx, true),
-            icon: const Icon(Icons.send_rounded, size: 18),
-            label: const Text('Enviar invitación'),
-          ),
-        ],
-      ),
+    final ok = await AppModernDialog.showDoctorInvite(
+      context,
+      name: doctor.name,
+      email: doctor.email,
+      profilePic: doctor.profilePic,
+      specialties: doctor.specialties,
     );
 
     if (ok != true || !mounted) return;

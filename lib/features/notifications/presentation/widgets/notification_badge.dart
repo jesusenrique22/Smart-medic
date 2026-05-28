@@ -3,12 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/network/api_client.dart' show ApiException;
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/profile_ui.dart';
 import '../../data/notifications_api_service.dart';
 import 'notifications_dropdown.dart';
 
 /// Icono de campana con contador y panel desplegable de notificaciones.
 class NotificationBadge extends StatefulWidget {
-  const NotificationBadge({super.key});
+  /// Fondo oscuro (header con gradiente): icono blanco en círculo semitransparente.
+  final bool onDarkBackground;
+
+  const NotificationBadge({super.key, this.onDarkBackground = false});
 
   @override
   State<NotificationBadge> createState() => _NotificationBadgeState();
@@ -19,12 +25,21 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   int _unread = 0;
   OverlayEntry? _overlay;
   Timer? _pollTimer;
+  Duration _pollInterval = const Duration(seconds: 45);
 
   @override
   void initState() {
     super.initState();
     _refreshCount();
-    _pollTimer = Timer.periodic(const Duration(seconds: 45), (_) => _refreshCount());
+    _schedulePoll();
+  }
+
+  void _schedulePoll() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer(_pollInterval, () async {
+      await _refreshCount();
+      _schedulePoll();
+    });
   }
 
   @override
@@ -41,8 +56,15 @@ class _NotificationBadgeState extends State<NotificationBadge> {
     }
     try {
       final count = await _api.unreadCount();
-      if (mounted) setState(() => _unread = count);
-    } catch (_) {}
+      if (mounted) {
+        setState(() => _unread = count);
+        _pollInterval = const Duration(seconds: 45);
+      }
+    } on ApiException catch (_) {
+      _pollInterval = const Duration(seconds: 120);
+    } catch (_) {
+      _pollInterval = const Duration(seconds: 120);
+    }
   }
 
   void _removeOverlay() {
@@ -99,20 +121,27 @@ class _NotificationBadgeState extends State<NotificationBadge> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        IconButton(
-          icon: const Icon(Icons.notifications_none, size: 28),
+        ProfileHeaderIconButton(
+          onDarkBackground: widget.onDarkBackground,
           tooltip: 'Notificaciones',
           onPressed: AppSession.isLoggedIn ? _toggleDropdown : null,
+          icon: _unread > 0
+              ? Icons.notifications_rounded
+              : Icons.notifications_outlined,
         ),
         if (_unread > 0)
           Positioned(
-            right: 6,
-            top: 6,
+            right: 4,
+            top: 4,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: const BoxDecoration(
-                color: Colors.red,
+              decoration: BoxDecoration(
+                color: AppColors.emergency,
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: widget.onDarkBackground ? AppColors.primaryDark : Colors.white,
+                  width: 2,
+                ),
               ),
               constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
               child: Text(

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/auth/app_session.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/profile_ui.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../data/clinic_admin_api_service.dart';
 
@@ -21,6 +23,7 @@ class _ClinicAdminPasswordPageState extends State<ClinicAdminPasswordPage> {
 
   bool _obscureCurrent = true;
   bool _obscureNew = true;
+  bool _obscureConfirm = true;
   bool _saving = false;
 
   @override
@@ -44,7 +47,7 @@ class _ClinicAdminPasswordPageState extends State<ClinicAdminPasswordPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Contraseña actualizada'),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.secondary,
         ),
       );
       Navigator.pop(context);
@@ -60,99 +63,134 @@ class _ClinicAdminPasswordPageState extends State<ClinicAdminPasswordPage> {
 
   @override
   Widget build(BuildContext context) {
+    final user = AppSession.currentUser;
+    final name = user?.name ?? 'Administrador';
+    final email = user?.email ?? '';
+
     return ResponsiveScaffold(
-      appBar: AppBar(title: const Text('Cambiar contraseña')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(Icons.lock_rounded, size: 48, color: AppColors.primary),
-              const SizedBox(height: 16),
-              const Text(
-                'Actualiza la contraseña de tu cuenta de administrador de clínica.',
-                style: TextStyle(color: AppColors.textSecondary),
+      backgroundColor: AppColors.background,
+      title: const Text('Mi perfil'),
+      body: ProfileScreenLayout(
+        children: [
+          ProfileGradientHeader(
+            name: name,
+            subtitle: email,
+            badgeLabel: 'Admin de clínica',
+            badgeIcon: Icons.local_hospital_rounded,
+            badgeColor: const Color(0xFF6EE7B7),
+            leading: CircleAvatar(
+              radius: 32,
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              child: const Icon(
+                Icons.admin_panel_settings_rounded,
+                color: Colors.white,
+                size: 32,
               ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _currentController,
-                obscureText: _obscureCurrent,
-                decoration: InputDecoration(
-                  labelText: 'Contraseña actual',
-                  filled: true,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureCurrent
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureCurrent = !_obscureCurrent),
-                  ),
-                ),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Ingresa tu contraseña actual' : null,
+            ),
+            stats: const [
+              ProfileStatChip(
+                icon: Icons.lock_rounded,
+                label: 'Sección',
+                value: 'Seguridad',
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _newController,
-                obscureText: _obscureNew,
-                decoration: InputDecoration(
-                  labelText: 'Nueva contraseña',
-                  filled: true,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureNew
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                    onPressed: () => setState(() => _obscureNew = !_obscureNew),
-                  ),
-                ),
-                validator: (v) {
-                  if (v == null || v.length < 6) {
-                    return 'Mínimo 6 caracteres';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _confirmController,
-                obscureText: _obscureNew,
-                decoration: const InputDecoration(
-                  labelText: 'Confirmar nueva contraseña',
-                  filled: true,
-                ),
-                validator: (v) {
-                  if (v != _newController.text) {
-                    return 'Las contraseñas no coinciden';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 32),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 52),
-                ),
-                child: _saving
-                    ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Guardar contraseña'),
+              ProfileStatChip(
+                icon: Icons.verified_user_rounded,
+                label: 'Cuenta',
+                value: 'Activa',
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 20),
+          Form(
+            key: _formKey,
+            child: ProfileSectionCard(
+              title: 'Cambiar contraseña',
+              icon: Icons.lock_outline_rounded,
+              children: [
+                Text(
+                  'Actualiza el acceso de tu cuenta de administrador de clínica.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _currentController,
+                  obscureText: _obscureCurrent,
+                  decoration: InputDecoration(
+                    labelText: 'Contraseña actual',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureCurrent
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscureCurrent = !_obscureCurrent),
+                    ),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Ingresa tu contraseña actual' : null,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _newController,
+                  obscureText: _obscureNew,
+                  decoration: InputDecoration(
+                    labelText: 'Nueva contraseña',
+                    prefixIcon: const Icon(Icons.lock_reset_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureNew
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                      ),
+                      onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                    ),
+                  ),
+                  validator: (v) {
+                    if (v == null || v.length < 6) {
+                      return 'Mínimo 6 caracteres';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _confirmController,
+                  obscureText: _obscureConfirm,
+                  decoration: InputDecoration(
+                    labelText: 'Confirmar nueva contraseña',
+                    prefixIcon: const Icon(Icons.lock_reset_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureConfirm
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscureConfirm = !_obscureConfirm),
+                    ),
+                  ),
+                  validator: (v) {
+                    if (v != _newController.text) {
+                      return 'Las contraseñas no coinciden';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 18),
+                ProfileGradientButton(
+                  label: 'Guardar nueva contraseña',
+                  icon: Icons.save_rounded,
+                  loading: _saving,
+                  onPressed: _save,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

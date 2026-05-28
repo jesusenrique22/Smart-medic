@@ -1,3 +1,4 @@
+import { wallClockToDate } from '../utils/appTimezone';
 import { Appointment } from '../models/Appointment';
 import { DoctorProfile } from '../models/DoctorProfile';
 import { DoctorWorkSchedule } from '../models/DoctorWorkSchedule';
@@ -151,8 +152,7 @@ export async function getAvailableSlots(params: {
     const facility = sched.facility;
 
     for (let min = startMin; min + durationMinutes <= endMin; min += STEP) {
-      const slotStart = new Date(dayDate);
-      slotStart.setHours(Math.floor(min / 60), min % 60, 0, 0);
+      const slotStart = wallClockToDate(year, month, day, min);
       const slotEnd = computeEndTime(slotStart, durationMinutes);
 
       const isPast = slotStart.getTime() <= Date.now();

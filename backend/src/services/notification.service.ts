@@ -3,20 +3,7 @@ import { Appointment } from '../models/Appointment';
 import { Notification } from '../models/Notification';
 import { AppointmentStatus, UserRole } from '../types/enums';
 import { User } from '../models/User';
-
-function formatApptWhen(date: Date): string {
-  const d = new Date(date);
-  const day = d.getDate();
-  const months = [
-    'ene', 'feb', 'mar', 'abr', 'may', 'jun',
-    'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
-  ];
-  const h = d.getHours();
-  const m = d.getMinutes().toString().padStart(2, '0');
-  const period = h >= 12 ? 'p. m.' : 'a. m.';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${day} ${months[d.getMonth()]} · ${h12}:${m} ${period}`;
-}
+import { formatApptWhen } from '../utils/appTimezone';
 
 function reminderCopy(msUntil: number, otherName: string, when: string, isDoctor: boolean): {
   title: string;

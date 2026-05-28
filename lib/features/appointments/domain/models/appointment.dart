@@ -1,3 +1,5 @@
+import '../../../../core/utils/appointment_datetime.dart';
+
 enum AppointmentStatus { pending, confirmed, completed, cancelled }
 
 enum AppointmentType { online, presential }
@@ -137,8 +139,10 @@ class Appointment {
       doctorAvatar: doctor.profilePic,
       doctorPhone: doctor.phone,
       specialty: specialtyName,
-      dateTime: DateTime.parse(j['dateTime'] as String),
-      endTime: j['endTime'] != null ? DateTime.parse(j['endTime'] as String) : null,
+      dateTime: parseAppointmentDateTime(j['dateTime'] as String),
+      endTime: j['endTime'] != null
+          ? parseAppointmentDateTime(j['endTime'] as String)
+          : null,
       durationMinutes: (j['durationMinutes'] as num?)?.toInt() ?? 30,
       status: _parseStatus(j['status'] as String?),
       type: _parseType(j['type'] as String?),
@@ -296,7 +300,7 @@ class AppointmentTimeSlot {
   factory AppointmentTimeSlot.fromJson(Map<String, dynamic> j) => AppointmentTimeSlot(
         startTime: j['startTime'] as String? ?? '',
         endTime: j['endTime'] as String? ?? '',
-        dateTime: DateTime.parse(j['dateTime'] as String),
+        dateTime: parseAppointmentDateTime(j['dateTime'] as String),
         available: j['available'] as bool? ?? false,
         facilityId: j['facilityId'] as String?,
         facilityName: j['facilityName'] as String?,

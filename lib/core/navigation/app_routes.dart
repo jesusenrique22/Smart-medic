@@ -141,15 +141,27 @@ class AppRoutes {
       roles: {Role.patient, Role.doctor},
     ),
     AppRouteDestination(
+      path: messages,
+      label: 'Mensajes',
+      icon: Icons.chat_rounded,
+      roles: {Role.patient, Role.doctor},
+    ),
+    AppRouteDestination(
       path: doctorDashboard,
-      label: 'Médico',
-      icon: Icons.health_and_safety_rounded,
+      label: 'Inicio',
+      icon: Icons.home_rounded,
       roles: {Role.doctor},
     ),
     AppRouteDestination(
       path: doctorSchedule,
-      label: 'Agenda médica',
+      label: 'Agenda',
       icon: Icons.calendar_view_week_rounded,
+      roles: {Role.doctor},
+    ),
+    AppRouteDestination(
+      path: doctorProfile,
+      label: 'Perfil',
+      icon: Icons.person_rounded,
       roles: {Role.doctor},
     ),
     AppRouteDestination(
@@ -208,8 +220,26 @@ class AppRoutes {
     ),
     AppRouteDestination(
       path: clinicAdminDashboard,
-      label: 'Admin clínica',
+      label: 'Inicio',
       icon: Icons.local_hospital_rounded,
+      roles: {Role.clinicAdmin},
+    ),
+    AppRouteDestination(
+      path: clinicAssignDoctor,
+      label: 'Médicos',
+      icon: Icons.groups_rounded,
+      roles: {Role.clinicAdmin},
+    ),
+    AppRouteDestination(
+      path: adminCreateDoctor,
+      label: 'Crear médico',
+      icon: Icons.person_add_alt_1_rounded,
+      roles: {Role.clinicAdmin, Role.superAdmin, Role.admin},
+    ),
+    AppRouteDestination(
+      path: clinicAdminPassword,
+      label: 'Cuenta',
+      icon: Icons.manage_accounts_rounded,
       roles: {Role.clinicAdmin},
     ),
     AppRouteDestination(
@@ -218,7 +248,23 @@ class AppRoutes {
       icon: Icons.local_pharmacy_rounded,
       roles: {Role.pharmacyAdmin, Role.pharmacist, Role.pharmacyCashier},
     ),
+    AppRouteDestination(
+      path: pharmacyAdminManage,
+      label: 'Gestión',
+      icon: Icons.settings_rounded,
+      roles: {Role.pharmacyAdmin, Role.pharmacy},
+    ),
   ];
+
+  static List<AppRouteDestination> _destinationsForPaths(List<String> paths) {
+    return paths
+        .map(
+          (path) => destinations.firstWhere(
+            (destination) => destination.path == path,
+          ),
+        )
+        .toList(growable: false);
+  }
 
   static const List<AppRouteDestination> mobileDestinations = [
     AppRouteDestination(
@@ -282,7 +328,6 @@ class AppRoutes {
   }
 
   static List<AppRouteDestination> mobileDestinationsForRole(Role role) {
-    final roleDestinations = destinationsForRole(role);
     if (role == Role.patient) {
       return const [
         AppRouteDestination(
@@ -292,16 +337,16 @@ class AppRoutes {
           roles: {Role.patient},
         ),
         AppRouteDestination(
+          path: messages,
+          label: 'Mensajes',
+          icon: Icons.chat_rounded,
+          roles: {Role.patient, Role.doctor},
+        ),
+        AppRouteDestination(
           path: appointments,
           label: 'Citas',
           icon: Icons.event_note_rounded,
           roles: {Role.patient, Role.doctor},
-        ),
-        AppRouteDestination(
-          path: ambulanceCheckout,
-          label: 'Emergencia',
-          icon: Icons.emergency_rounded,
-          roles: {Role.patient},
         ),
         AppRouteDestination(
           path: patientProfile,
@@ -311,7 +356,45 @@ class AppRoutes {
         ),
       ];
     }
-    return roleDestinations.take(5).toList(growable: false);
+    if (role == Role.clinicAdmin) {
+      return _destinationsForPaths([
+        clinicAdminDashboard,
+        clinicAssignDoctor,
+        adminCreateDoctor,
+        clinicAdminPassword,
+      ]);
+    }
+    if (role == Role.doctor) {
+      return _destinationsForPaths([
+        doctorDashboard,
+        messages,
+        appointments,
+        doctorProfile,
+      ]);
+    }
+    if (role == Role.pharmacyAdmin ||
+        role == Role.pharmacist ||
+        role == Role.pharmacyCashier) {
+      return _destinationsForPaths([pharmacyOps, pharmacyAdminManage]);
+    }
+    if (role == Role.driver) {
+      return _destinationsForPaths([
+        ambulanceDashboard,
+        paramedicDashboard,
+      ]);
+    }
+    if (role == Role.clinicStaff) {
+      return _destinationsForPaths([
+        clinicReception,
+        erDashboard,
+        clinicBilling,
+      ]);
+    }
+
+    final roleDestinations = destinationsForRole(role);
+    return roleDestinations.length >= 2
+        ? roleDestinations.take(5).toList(growable: false)
+        : roleDestinations;
   }
 
   /// Rutas que no aparecen en el menú lateral pero sí están permitidas por rol.
@@ -392,7 +475,15 @@ class AppRoutes {
     appointments: (_) => const MyAppointmentsPage(),
     tracking: (_) => const AmbulanceTracking(),
     prescriptions: (_) => const PrescriptionsPage(),
-    videoCall: (_) => const VideoCallPage(),
+    videoCall: (context) {
+      final raw = ModalRoute.of(context)?.settings.arguments;
+      final Map<String, dynamic>? args = raw is Map<String, dynamic>
+          ? raw
+          : raw is Map
+              ? Map<String, dynamic>.from(raw)
+              : null;
+      return WebRtcCallPage(initialArgs: args);
+    },
     insurance: (_) => const InsurancePage(),
     pharmacy: (_) => const PharmacyPage(),
     medicalHistory: (_) => const MedicalHistoryPage(),

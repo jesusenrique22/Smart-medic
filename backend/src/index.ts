@@ -1,8 +1,10 @@
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 
 import { connectDatabase } from './config/db';
+import { initSocketServer } from './socket/socketServer';
 import authRoutes from './routes/auth.routes';
 import patientRoutes from './routes/patient.routes';
 import doctorRoutes from './routes/doctor.routes';
@@ -44,8 +46,10 @@ app.use('/api/notifications', notificationRoutes);
 async function start() {
   try {
     await connectDatabase();
-    app.listen(PORT, () => {
-      console.log(`Smart Medic Backend en puerto ${PORT}`);
+    const httpServer = http.createServer(app);
+    initSocketServer(httpServer);
+    httpServer.listen(PORT, () => {
+      console.log(`Smart Medic Backend en puerto ${PORT} (HTTP + WebSocket)`);
     });
   } catch (error) {
     console.error('No se pudo iniciar el servidor:', error);

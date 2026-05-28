@@ -16,6 +16,13 @@ import {
   acceptClinicInvitation as acceptClinicInvitationService,
   rejectClinicInvitation as rejectClinicInvitationService,
 } from '../services/clinicInvitation.service';
+import {
+  addSpecialtyToDoctorProfile,
+  createSpecialtyAndAddToDoctorProfile,
+  removeSpecialtyFromDoctorProfile,
+  updateDoctorProfileDetails,
+  updateSpecialtyConsultationDuration,
+} from '../services/doctorProfileSpecialty.service';
 
 async function assertGeneralMedicineDoctor(doctorId: string): Promise<void> {
   const profile = await DoctorProfile.findOne({ userId: doctorId }).populate(
@@ -272,6 +279,77 @@ export const getMyPatients = async (req: AuthRequest, res: Response) => {
       profile: profiles.find((pr) => pr.userId.toString() === u.id) ?? null,
     })),
   );
+};
+
+export const addMySpecialty = async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await addSpecialtyToDoctorProfile(
+      req.user!.id,
+      String(req.body.specialtyId),
+    );
+    res.status(201).json({
+      message: 'Especialidad agregada a tu perfil',
+      profile,
+    });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+};
+
+export const createAndAddMySpecialty = async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await createSpecialtyAndAddToDoctorProfile(
+      req.user!.id,
+      String(req.body.name ?? ''),
+    );
+    res.status(201).json({
+      message: 'Nueva especialidad registrada y agregada a tu perfil',
+      profile,
+    });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+};
+
+export const removeMySpecialty = async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await removeSpecialtyFromDoctorProfile(
+      req.user!.id,
+      req.params.specialtyId,
+    );
+    res.json({
+      message: 'Especialidad eliminada de tu perfil',
+      profile,
+    });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+};
+
+export const updateMySpecialtyDuration = async (req: AuthRequest, res: Response) => {
+  try {
+    const profile = await updateSpecialtyConsultationDuration(
+      req.user!.id,
+      req.params.specialtyId,
+      Number(req.body.durationMinutes),
+    );
+    res.json({ message: 'Duración actualizada', profile });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+};
+
+export const patchMyProfileDetails = async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await updateDoctorProfileDetails(req.user!.id, req.body);
+    res.json({
+      message: 'Perfil actualizado',
+      user: result.user,
+      profile: result.profile,
+    });
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
 };
 
 export const acceptClinicInvitation = async (req: AuthRequest, res: Response) => {

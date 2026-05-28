@@ -8,6 +8,9 @@ class AppSession {
   static User? currentUser;
   static String? token;
 
+  /// Llamado al cerrar sesión (p. ej. desconectar Socket.IO). Registrado en [main].
+  static void Function()? onSessionEnded;
+
   static bool get isLoggedIn => token != null && currentUser != null;
 
   static void setSession({required User user, required String tokenValue}) {
@@ -39,6 +42,26 @@ class AppSession {
     activeRole = role;
   }
 
+  static Future<void> updateCurrentUser({
+    String? name,
+    String? avatarUrl,
+    String? phone,
+  }) async {
+    final user = currentUser;
+    final sessionToken = token;
+    if (user == null || sessionToken == null) return;
+
+    currentUser = User(
+      id: user.id,
+      name: name ?? user.name,
+      email: user.email,
+      role: user.role,
+      avatarUrl: avatarUrl ?? user.avatarUrl,
+      phone: phone ?? user.phone,
+    );
+    await SessionStorage.save(user: currentUser!, token: sessionToken);
+  }
+
   static void clear({bool localOnly = false}) {
     currentUser = null;
     token = null;
@@ -46,6 +69,7 @@ class AppSession {
     PatientProfileRepository.clear();
     if (!localOnly) {
       SessionStorage.clear();
+      onSessionEnded?.call();
     }
   }
 }

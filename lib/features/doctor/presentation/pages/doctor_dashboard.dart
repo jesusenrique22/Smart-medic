@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/services/app_realtime.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/appointment_datetime.dart';
+import '../../../../core/widgets/profile_ui.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../../core/widgets/safe_avatar.dart';
 import '../../../appointments/data/appointment_api_service.dart';
+import '../../../appointments/presentation/widgets/appointment_reminder_host.dart';
 import '../../../notifications/presentation/widgets/notification_badge.dart';
 import '../../../appointments/domain/models/appointment.dart';
 import '../../data/doctor_api_service.dart';
@@ -39,6 +43,7 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
   @override
   void initState() {
     super.initState();
+    AppRealtime.connectIfNeeded();
     _refreshDashboard();
   }
 
@@ -96,24 +101,33 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveScaffold(
+    return AppointmentReminderHost(
+      loadAppointments: _apptService.getDoctorAppointments,
+      child: ResponsiveScaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Panel del Médico'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.person_outline),
+          ProfileHeaderIconButton(
             tooltip: 'Mi perfil',
-            onPressed: () =>
-                Navigator.pushNamed(context, AppRoutes.doctorProfile),
+            onDarkBackground: false,
+            icon: Icons.person_outline_rounded,
+            onPressed: () async {
+              await Navigator.pushNamed(context, AppRoutes.doctorProfile);
+              if (mounted) _loadProfile();
+            },
           ),
-          const NotificationBadge(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
+          const NotificationBadge(onDarkBackground: false),
+          ProfileHeaderIconButton(
+            tooltip: 'Actualizar',
+            onDarkBackground: false,
+            icon: Icons.refresh_rounded,
             onPressed: _loadingAppts ? null : _refreshDashboard,
           ),
-          IconButton(
-            icon: const Icon(Icons.logout),
+          ProfileHeaderIconButton(
+            tooltip: 'Cerrar sesión',
+            onDarkBackground: false,
+            icon: Icons.logout_rounded,
             onPressed: () {
               AppSession.clear();
               Navigator.pushReplacementNamed(context, AppRoutes.login);
@@ -132,8 +146,6 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
           children: [
             _buildDoctorHeader(),
             const SizedBox(height: 24),
-            _buildStatsCards(),
-            const SizedBox(height: 32),
             _buildScheduleManagerCard(),
             const SizedBox(height: 32),
             _buildSectionHeader('Próximas Consultas', 'Ver todas'),
@@ -158,6 +170,7 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
           style: TextStyle(color: Colors.white),
         ),
       ),
+    ),
     );
   }
 
@@ -561,113 +574,47 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
   Widget _buildDoctorHeader() {
     final user = AppSession.currentUser;
     final name = _profile?.name ?? user?.name ?? 'Médico';
-    final subtitle = _profile?.subtitle ?? 'Panel médico VITA';
-    final avatar = _profile?.avatarUrl ?? user?.avatarUrl;
+    final subtitle = _profile?.subtitle ?? user?.email ?? 'Panel médico VITA OS';
+    final avatar = _profile?.avatarUrl ?? user?.avatarUrl ?? '';
+    final todayCount = _todayAppointments.length;
+    final confirmedCount = _todayAppointments
+        .where(
+          (a) =>
+              a.status == AppointmentStatus.confirmed ||
+              a.status == AppointmentStatus.pending,
+        )
+        .length;
+    final rating = _profile?.rating ?? 5.0;
+    final ratingCount = _profile?.ratingCount ?? 0;
 
-    return Row(
-      children: [
-        SafeAvatar(radius: 30, imageUrl: avatar ?? ''),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-              Text(
-                subtitle,
-                style: const TextStyle(color: AppColors.textSecondary),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatsCards() {
-    final todayCount = _todayAppointments.length.toString();
-    return Row(
-      children: [
-        _statCard('Citas hoy', _loadingAppts ? '…' : todayCount,
-            Icons.calendar_today, Colors.orange),
-        const SizedBox(width: 16),
-        _statCard(
-            'Confirmadas',
-            _loadingAppts
-                ? '…'
-                : _todayAppointments
-                    .where((a) =>
-                        a.status == AppointmentStatus.confirmed ||
-                        a.status == AppointmentStatus.pending)
-                    .length
-                    .toString(),
-            Icons.check_circle_outline,
-            Colors.green),
-        const SizedBox(width: 16),
-        _statCard(
-          'Calificación',
-          _profile != null
-              ? _profile!.rating.toStringAsFixed(1)
-              : '…',
-          Icons.star,
-          Colors.amber,
-          subtitle: _profile != null && _profile!.ratingCount > 0
-              ? '${_profile!.ratingCount} reseñas'
-              : null,
-        ),
-      ],
-    );
-  }
-
-  Widget _statCard(
-    String label,
-    String value,
-    IconData icon,
-    Color color, {
-    String? subtitle,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.primaryLight),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            FittedBox(
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.grey, fontSize: 10),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (subtitle != null)
-              Text(
-                subtitle,
-                style: const TextStyle(color: Colors.grey, fontSize: 9),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-          ],
-        ),
+    return ProfileGradientHeader(
+      name: name,
+      subtitle: subtitle,
+      badgeLabel: 'Médico verificado',
+      badgeIcon: Icons.verified_rounded,
+      badgeColor: const Color(0xFF6EE7B7),
+      leading: SafeAvatar(
+        radius: 32,
+        imageUrl: avatar,
+        placeholderIcon: Icons.medical_services_rounded,
       ),
+      stats: [
+        ProfileStatChip(
+          icon: Icons.calendar_today_rounded,
+          label: 'Citas hoy',
+          value: _loadingAppts ? '…' : '$todayCount',
+        ),
+        ProfileStatChip(
+          icon: Icons.check_circle_rounded,
+          label: 'Confirmadas',
+          value: _loadingAppts ? '…' : '$confirmedCount',
+        ),
+        ProfileStatChip(
+          icon: Icons.star_rounded,
+          label: ratingCount > 0 ? 'Calificación ($ratingCount)' : 'Calificación',
+          value: _profile != null ? rating.toStringAsFixed(1) : '5.0',
+        ),
+      ],
     );
   }
 
@@ -756,12 +703,7 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
     );
   }
 
-  String _fmtTime(DateTime d) {
-    final h = d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour);
-    final period = d.hour >= 12 ? 'PM' : 'AM';
-    final m = d.minute.toString().padLeft(2, '0');
-    return '$h:$m $period';
-  }
+  String _fmtTime(DateTime d) => formatTime12h(d);
 
   Widget _buildUpcomingAppointments() {
     if (_loadingAppts) {

@@ -1,13 +1,18 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/utils/date_format.dart';
+import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/app_realtime.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../../core/widgets/safe_avatar.dart';
 import '../../../auth/domain/models/role.dart';
 import '../../data/chat_api_service.dart';
 
+/// Mensajería paciente–médico: pestaña Chats (bidireccional) e Historial clínico.
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
 
@@ -15,25 +20,46 @@ class MessagesPage extends StatefulWidget {
   State<MessagesPage> createState() => _MessagesPageState();
 }
 
-class _MessagesPageState extends State<MessagesPage> {
+class _MessagesPageState extends State<MessagesPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
   final _chat = ChatApiService();
+
   List<ChatConversationItem> _conversations = [];
-  ChatConversationItem? _active;
-  List<ChatMessageItem> _messages = [];
+  ChatConversationItem? _activeChat;
+  List<ChatMessageItem> _chatMessages = [];
+  List<ClinicalFeedItem> _clinicalItems = [];
+
   final _textController = TextEditingController();
-  bool _loadingList = true;
+  final _scrollController = ScrollController();
+
+  bool _loadingChats = true;
   bool _loadingThread = false;
+  bool _loadingClinical = true;
   bool _sending = false;
-  String? _error;
+  String? _chatError;
+  String? _clinicalError;
+  String? _joinedConversationId;
+
+  StreamSubscription<Map<String, dynamic>>? _messageSub;
+  StreamSubscription<Map<String, dynamic>>? _conversationSub;
 
   bool get _isDoctor => AppSession.activeRole == Role.doctor;
-
   bool _openedFromArgs = false;
 
   @override
   void initState() {
     super.initState();
-    _loadConversations();
+    _tabController = TabController(length: 2, vsync: this)
+      ..addListener(() {
+        if (!_tabController.indexIsChanging) setState(() {});
+      });
+    AppRealtime.connectIfNeeded();
+    _messageSub = AppRealtime.chatSocket.onMessage.listen(_onSocketMessage);
+    _conversationSub =
+        AppRealtime.chatSocket.onConversationUpdated.listen(_onConversationUpdated);
+    _loadChats();
+    _loadClinical();
   }
 
   @override
@@ -45,10 +71,11 @@ class _MessagesPageState extends State<MessagesPage> {
     _openedFromArgs = true;
     final id = args['conversationId'] as String;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (_conversations.isEmpty) await _loadConversations();
+      _tabController.index = 0;
+      if (_conversations.isEmpty) await _loadChats();
       for (final c in _conversations) {
         if (c.id == id) {
-          await _openConversation(c);
+          await _openChat(c);
           break;
         }
       }
@@ -57,67 +84,187 @@ class _MessagesPageState extends State<MessagesPage> {
 
   @override
   void dispose() {
+    if (_joinedConversationId != null) {
+      AppRealtime.chatSocket.leaveConversation(_joinedConversationId!);
+    }
+    _messageSub?.cancel();
+    _conversationSub?.cancel();
     _textController.dispose();
+    _scrollController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadConversations() async {
+  void _onSocketMessage(Map<String, dynamic> data) {
+    final kind = data['kind']?.toString() ?? 'chat';
+    if (kind == 'clinical') {
+      _loadClinical();
+      return;
+    }
+
+    final convId = data['conversationId']?.toString();
+    final raw = data['message'];
+    if (convId == null || raw is! Map) return;
+
+    final msg = ChatMessageItem.fromJson(Map<String, dynamic>.from(raw));
+    if (_activeChat?.id != convId) {
+      _loadChats();
+      return;
+    }
+    if (_chatMessages.any((m) => m.id == msg.id)) return;
+    setState(() => _chatMessages = [..._chatMessages, msg]);
+    _scrollToBottom();
+  }
+
+  void _onConversationUpdated(Map<String, dynamic> data) {
+    final kind = data['kind']?.toString() ?? 'chat';
+    if (kind == 'clinical') {
+      _loadClinical();
+      return;
+    }
+    _loadChats();
+  }
+
+  Future<void> _loadChats() async {
     setState(() {
-      _loadingList = true;
-      _error = null;
+      _loadingChats = true;
+      _chatError = null;
     });
     try {
       final list = await _chat.listConversations();
+      list.sort((a, b) {
+        final at = a.lastChatMessageAt ??
+            a.lastClinicalMessageAt ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final bt = b.lastChatMessageAt ??
+            b.lastClinicalMessageAt ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        return bt.compareTo(at);
+      });
       if (!mounted) return;
       setState(() {
         _conversations = list;
-        _loadingList = false;
+        _loadingChats = false;
       });
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.message;
-        _loadingList = false;
+        _chatError = e.message;
+        _loadingChats = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'No se pudieron cargar las conversaciones';
-        _loadingList = false;
+        _chatError = 'No se pudieron cargar los chats';
+        _loadingChats = false;
       });
     }
   }
 
-  Future<void> _openConversation(ChatConversationItem c) async {
+  Future<void> _loadClinical() async {
     setState(() {
-      _active = c;
-      _loadingThread = true;
-      _messages = [];
+      _loadingClinical = true;
+      _clinicalError = null;
     });
     try {
-      final msgs = await _chat.getMessages(c.id);
+      final items = _isDoctor
+          ? (await _chat.getClinicalFeed())
+              .map(
+                (m) => ClinicalFeedItem(
+                  id: m.id,
+                  title: 'Indicación clínica',
+                  body: m.text,
+                  doctorName: m.patientName ?? m.senderName,
+                  date: m.createdAt,
+                ),
+              )
+              .toList()
+          : await _chat.getPatientClinicalTimeline();
       if (!mounted) return;
       setState(() {
-        _messages = msgs;
+        _clinicalItems = items;
+        _loadingClinical = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _clinicalError = e.message;
+        _loadingClinical = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _clinicalError = 'No se pudo cargar el historial clínico';
+        _loadingClinical = false;
+      });
+    }
+  }
+
+  Future<void> _openChat(ChatConversationItem c) async {
+    if (_joinedConversationId != null && _joinedConversationId != c.id) {
+      AppRealtime.chatSocket.leaveConversation(_joinedConversationId!);
+    }
+    _joinedConversationId = c.id;
+    AppRealtime.chatSocket.joinConversation(c.id);
+
+    setState(() {
+      _activeChat = c;
+      _loadingThread = true;
+      _chatMessages = [];
+    });
+    try {
+      final msgs = await _chat.getMessages(c.id, kind: ChatMessageKind.chat);
+      if (!mounted) return;
+      setState(() {
+        _chatMessages = msgs;
         _loadingThread = false;
       });
+      _scrollToBottom();
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingThread = false);
     }
   }
 
-  Future<void> _send() async {
-    final conv = _active;
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  Future<void> _sendChat() async {
+    final conv = _activeChat;
     final text = _textController.text.trim();
     if (conv == null || text.isEmpty) return;
 
     setState(() => _sending = true);
     try {
-      await _chat.sendMessage(conversationId: conv.id, text: text);
+      ChatMessageItem? sent;
+      if (AppRealtime.chatSocket.isConnected) {
+        sent = await AppRealtime.chatSocket.sendMessage(
+          conversationId: conv.id,
+          text: text,
+          kind: 'chat',
+        );
+      }
+      final message = sent ??
+          await _chat.sendMessage(
+            conversationId: conv.id,
+            text: text,
+            kind: ChatMessageKind.chat,
+          );
+
       _textController.clear();
-      await _openConversation(conv);
-      await _loadConversations();
+      if (!_chatMessages.any((m) => m.id == message.id)) {
+        setState(() => _chatMessages = [..._chatMessages, message]);
+      }
+      await _loadChats();
+      _scrollToBottom();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -128,169 +275,625 @@ class _MessagesPageState extends State<MessagesPage> {
     }
   }
 
+  Future<void> _showNewChatSheet() async {
+    try {
+      final contacts = await _chat.listContactsForNewChat();
+      if (!mounted) return;
+      if (contacts.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _conversations.isEmpty
+                  ? 'Necesitas una cita con un ${_isDoctor ? 'paciente' : 'médico'} para iniciar un chat.'
+                  : 'Ya tienes chat con todos tus contactos que tienen cita. Abre uno de la lista.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final picked = await showModalBottomSheet<ChatContactItem>(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _isDoctor ? 'Nueva conversación' : 'Nueva conversación',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _isDoctor
+                          ? 'Pacientes con cita contigo que aún no tienen chat'
+                          : 'Médicos con los que tienes cita y aún no tienes chat',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: contacts.length,
+                  itemBuilder: (_, i) {
+                    final c = contacts[i];
+                    return ListTile(
+                      leading: SafeAvatar(radius: 24, imageUrl: c.profilePic),
+                      title: Text(c.name),
+                      subtitle: Text(
+                        _isDoctor ? 'Iniciar chat' : 'Iniciar chat',
+                      ),
+                      trailing: const Icon(Icons.chat_bubble_outline),
+                      onTap: () => Navigator.pop(ctx, c),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (picked == null || !mounted) return;
+      final conv = await _chat.getOrCreateConversation(
+        doctorId: _isDoctor ? null : picked.id,
+        patientId: _isDoctor ? picked.id : null,
+      );
+      await _loadChats();
+      await _openChat(conv);
+      if (mounted) setState(() => _tabController.index = 0);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo iniciar el chat: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _startCall({required bool video}) {
+    final conv = _activeChat;
+    if (conv == null) return;
+
+    AppRealtime.connectIfNeeded();
+    if (!AppRealtime.chatSocket.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay conexión en tiempo real. Verifica que el backend esté en marcha (puerto 3000).',
+          ),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    Navigator.pushNamed(
+      context,
+      AppRoutes.videoCall,
+      arguments: {
+        'conversationId': conv.id,
+        'peerName': _peerName(conv),
+        'callType': video ? 'video' : 'audio',
+        'isOutgoing': true,
+      },
+    );
+  }
+
   String _peerName(ChatConversationItem c) =>
       _isDoctor ? c.patientName : c.doctorName;
 
   String? _peerAvatar(ChatConversationItem c) =>
       _isDoctor ? c.patientAvatar : c.doctorAvatar;
 
+  String _formatListTime(DateTime? dt) => AppDateFormat.listTime(dt);
+
+  String _formatMessageTime(DateTime dt) => AppDateFormat.timeHm(dt);
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width >= 800;
+    final inChatThread = _activeChat != null && _tabController.index == 0;
 
     return ResponsiveScaffold(
       appBar: AppBar(
-        title: Text(_active != null ? _peerName(_active!) : 'Mensajes'),
-        leading: _active != null && !wide
+        title: inChatThread && !wide
+            ? Text(_peerName(_activeChat!))
+            : const Text('Mensajes'),
+        leading: inChatThread && !wide
             ? IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                onPressed: () => setState(() => _active = null),
+                onPressed: () => setState(() => _activeChat = null),
               )
             : null,
+        actions: [
+          if (inChatThread) ...[
+            IconButton(
+              tooltip: 'Llamada de voz',
+              icon: const Icon(Icons.phone_rounded),
+              onPressed: () => _startCall(video: false),
+            ),
+            IconButton(
+              tooltip: 'Videollamada',
+              icon: const Icon(Icons.videocam_rounded),
+              onPressed: () => _startCall(video: true),
+            ),
+          ],
+        ],
+        bottom: inChatThread && !wide
+            ? null
+            : TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'Chats', icon: Icon(Icons.chat_rounded, size: 20)),
+                  Tab(
+                    text: 'Historial clínico',
+                    icon: Icon(Icons.medical_information_outlined, size: 20),
+                  ),
+                ],
+              ),
       ),
-      child: wide ? _buildWide() : _buildNarrow(),
+      floatingActionButton: _tabController.index == 0 && _activeChat == null
+          ? FloatingActionButton.extended(
+              onPressed: _showNewChatSheet,
+              icon: const Icon(Icons.add_comment_rounded),
+              label: const Text('Nuevo'),
+            )
+          : null,
+      child: inChatThread && !wide
+          ? _buildChatThread()
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                wide ? _buildChatsWide() : _buildChatsNarrow(),
+                _buildClinicalTab(),
+              ],
+            ),
     );
   }
 
-  Widget _buildWide() {
+  Widget _buildChatsWide() {
     return Row(
       children: [
-        SizedBox(width: 300, child: _buildConversationList()),
+        SizedBox(width: 320, child: _buildChatList()),
         const VerticalDivider(width: 1),
-        Expanded(child: _active == null ? _selectHint() : _buildThread()),
+        Expanded(
+          child: _activeChat == null ? _selectChatHint() : _buildChatThread(),
+        ),
       ],
     );
   }
 
-  Widget _buildNarrow() {
-    if (_active != null) return _buildThread();
-    return _buildConversationList();
+  Widget _buildChatsNarrow() {
+    if (_activeChat != null) return _buildChatThread();
+    return _buildChatList();
   }
 
-  Widget _selectHint() {
-    return const Center(
-      child: Text(
-        'Selecciona una conversación',
-        style: TextStyle(color: AppColors.textSecondary),
+  Widget _selectChatHint() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.chat_bubble_outline,
+              size: 64, color: AppColors.primary.withValues(alpha: 0.4)),
+          const SizedBox(height: 12),
+          const Text(
+            'Selecciona un chat o inicia uno nuevo',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildConversationList() {
-    if (_loadingList) {
+  Widget _buildChatList() {
+    if (_loadingChats) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null) {
-      return Center(child: Text(_error!));
+    if (_chatError != null) {
+      return Center(child: Text(_chatError!));
     }
     if (_conversations.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'No hay mensajes aún.\nTu médico puede escribirte desde el historial clínico.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.forum_outlined,
+                  size: 56, color: AppColors.primary.withValues(alpha: 0.35)),
+              const SizedBox(height: 16),
+              Text(
+                _isDoctor
+                    ? 'Aún no tienes conversaciones.\nPulsa «Nuevo» para escribir a un paciente con cita.'
+                    : 'Aún no tienes conversaciones.\nPulsa «Nuevo» para escribir a un médico con cita.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+            ],
           ),
         ),
       );
     }
-    return ListView.builder(
+
+    return ListView.separated(
       itemCount: _conversations.length,
+      separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
       itemBuilder: (_, i) {
         final c = _conversations[i];
-        final selected = _active?.id == c.id;
+        final selected = _activeChat?.id == c.id;
+        final preview = c.lastChatMessage ??
+            c.lastClinicalMessage ??
+            'Toca para abrir el chat';
+        final time = _formatListTime(
+          c.lastChatMessageAt ?? c.lastClinicalMessageAt,
+        );
+
         return ListTile(
           selected: selected,
-          leading: SafeAvatar(radius: 22, imageUrl: _peerAvatar(c)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          leading: SafeAvatar(radius: 26, imageUrl: _peerAvatar(c)),
           title: Text(
             _peerName(c),
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           subtitle: Text(
-            c.lastMessage ?? 'Sin mensajes',
+            preview,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          onTap: () => _openConversation(c),
+          trailing: time.isNotEmpty
+              ? Text(
+                  time,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                )
+              : null,
+          onTap: () => _openChat(c),
         );
       },
     );
   }
 
-  Widget _buildThread() {
+  Widget _buildChatThread() {
     return Column(
       children: [
+        if (MediaQuery.of(context).size.width >= 800 && _activeChat != null)
+          Material(
+            color: AppColors.primaryLight.withValues(alpha: 0.35),
+            child: ListTile(
+              leading: SafeAvatar(radius: 20, imageUrl: _peerAvatar(_activeChat!)),
+              title: Text(
+                _peerName(_activeChat!),
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: const Text('Chat en tiempo real'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.phone_rounded),
+                    onPressed: () => _startCall(video: false),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.videocam_rounded),
+                    onPressed: () => _startCall(video: true),
+                  ),
+                ],
+              ),
+            ),
+          ),
         Expanded(
           child: _loadingThread
               ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _messages.length,
-                  itemBuilder: (_, i) {
-                    final m = _messages[i];
-                    final mine = m.senderId == AppSession.currentUser?.id;
-                    return Align(
-                      alignment:
-                          mine ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        decoration: BoxDecoration(
-                          color: mine
-                              ? AppColors.primary
-                              : AppColors.primaryLight,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(
-                          m.text,
-                          style: TextStyle(
-                            color: mine ? Colors.white : AppColors.textPrimary,
-                          ),
-                        ),
+              : _chatMessages.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Di hola a ${_activeChat != null ? _peerName(_activeChat!) : 'tu contacto'}',
+                        style: const TextStyle(color: AppColors.textSecondary),
                       ),
-                    );
-                  },
-                ),
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
+                      itemCount: _chatMessages.length,
+                      itemBuilder: (_, i) => _buildBubble(_chatMessages[i], i),
+                    ),
         ),
-        const Divider(height: 1),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _textController,
-                  decoration: const InputDecoration(
-                    hintText: 'Escribe un mensaje...',
-                    border: OutlineInputBorder(),
-                    isDense: true,
+        _buildChatInput(),
+      ],
+    );
+  }
+
+  Widget _buildBubble(ChatMessageItem m, int index) {
+    final mine = m.senderId == AppSession.currentUser?.id;
+    final showDate = index == 0 ||
+        !_sameDay(_chatMessages[index - 1].createdAt, m.createdAt);
+
+    return Column(
+      children: [
+        if (showDate) _buildDateChip(m.createdAt),
+        Align(
+          alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.78,
+            ),
+            decoration: BoxDecoration(
+              color: mine ? AppColors.primary : Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(16),
+                topRight: const Radius.circular(16),
+                bottomLeft: Radius.circular(mine ? 16 : 4),
+                bottomRight: Radius.circular(mine ? 4 : 16),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.06),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment:
+                  mine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                Text(
+                  m.text,
+                  style: TextStyle(
+                    color: mine ? Colors.white : AppColors.textPrimary,
+                    height: 1.35,
                   ),
-                  onSubmitted: (_) => _send(),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _formatMessageTime(m.createdAt),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: mine
+                        ? Colors.white.withValues(alpha: 0.75)
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDateChip(DateTime dt) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          AppDateFormat.dayMonthYear(dt),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+      ),
+    );
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Widget _buildChatInput() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        8 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _textController,
+              minLines: 1,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'Mensaje',
+                filled: true,
+                fillColor: AppColors.primaryLight.withValues(alpha: 0.25),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
                 ),
               ),
-              const SizedBox(width: 8),
-              IconButton.filled(
-                onPressed: _sending ? null : _send,
-                icon: _sending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.send_rounded),
+              onSubmitted: (_) => _sendChat(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: AppColors.primary,
+            shape: const CircleBorder(),
+            child: IconButton(
+              onPressed: _sending ? null : _sendChat,
+              icon: _sending
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.send_rounded, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClinicalTab() {
+    if (_loadingClinical) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_clinicalError != null) {
+      return Center(child: Text(_clinicalError!));
+    }
+    if (_clinicalItems.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.medical_information_outlined,
+                  size: 56, color: AppColors.primary.withValues(alpha: 0.35)),
+              const SizedBox(height: 16),
+              Text(
+                _isDoctor
+                    ? 'Las indicaciones que envíes desde Historial Médico aparecerán aquí.'
+                    : 'Aquí verás indicaciones de tu médico y entradas de tu historial clínico.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
             ],
           ),
         ),
-      ],
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: _clinicalItems.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, i) {
+        final item = _clinicalItems[i];
+        return Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: AppColors.primary.withValues(alpha: 0.15)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                      child: Icon(
+                        item.isHistoryEntry
+                            ? Icons.history_edu_rounded
+                            : Icons.medical_services_outlined,
+                        size: 20,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.doctorName,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          Text(
+                            _formatListTime(item.date),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (item.isHistoryEntry)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Historial',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  item.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                if (item.body.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    item.body,
+                    style: const TextStyle(height: 1.4),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

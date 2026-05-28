@@ -1,4 +1,5 @@
 import '../../../core/network/api_client.dart';
+import '../../../core/utils/appointment_datetime.dart';
 import '../domain/models/appointment.dart';
 
 final _client = ApiClient();
@@ -32,7 +33,7 @@ class AppointmentApiService {
   }) async {
     final body = <String, dynamic>{
       'doctorId': doctorId,
-      'dateTime': dateTime.toIso8601String(),
+      'dateTime': appointmentDateTimeToApi(dateTime),
       'type': type,
       'facilityId': ?facilityId,
       'specialtyId': ?specialtyId,

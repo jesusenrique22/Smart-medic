@@ -15,6 +15,11 @@ import {
   updatePatientWeightControls,
   acceptClinicInvitation,
   rejectClinicInvitation,
+  addMySpecialty,
+  createAndAddMySpecialty,
+  removeMySpecialty,
+  updateMySpecialtyDuration,
+  patchMyProfileDetails,
 } from '../controllers/doctor.controller';
 import { authenticate, authorize } from '../middleware/auth';
 import { UserRole } from '../types/enums';
@@ -25,7 +30,12 @@ router.use(authenticate, authorize(UserRole.DOCTOR));
 
 router.get('/profile', getMyProfile);
 router.put('/profile', updateMyProfile);
+router.patch('/profile', patchMyProfileDetails);
 router.patch('/profile/password', changeMyPassword);
+router.post('/profile/specialties', addMySpecialty);
+router.post('/profile/specialties/new', createAndAddMySpecialty);
+router.delete('/profile/specialties/:specialtyId', removeMySpecialty);
+router.patch('/profile/specialties/:specialtyId/duration', updateMySpecialtyDuration);
 router.get('/schedules', getMySchedules);
 router.post('/schedules', createSchedule);
 router.put('/schedules/:id', updateSchedule);

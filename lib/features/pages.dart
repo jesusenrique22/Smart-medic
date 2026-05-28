@@ -7,6 +7,7 @@ export 'appointments/presentation/pages/my_appointments_page.dart';
 export 'emergency/presentation/pages/ambulance_tracking.dart';
 export 'pharmacy/presentation/pages/prescriptions_page.dart';
 export 'telemedicine/presentation/pages/video_call_page.dart';
+export 'telemedicine/presentation/pages/webrtc_call_page.dart';
 export 'insurance/presentation/pages/insurance_page.dart';
 export 'pharmacy/presentation/pages/pharmacy_page.dart';
 export 'medical_history/presentation/pages/medical_history_page.dart';
