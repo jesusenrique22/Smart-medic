@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -44,6 +43,10 @@ class _GatewayDebugPageState extends State<GatewayDebugPage> {
     }
   }
 
+  List<RealtimeDebugEntry> get _callEntries => _log.entries
+      .where((e) => e.tag == 'Call' || e.tag == 'WebRTC')
+      .toList();
+
   Future<void> _copyReport() async {
     final buffer = StringBuffer()
       ..writeln('=== Smart Medic — Gateway debug ===')
@@ -54,9 +57,17 @@ class _GatewayDebugPageState extends State<GatewayDebugPage> {
       final mark = line.ok == null ? '' : (line.ok! ? ' [OK]' : ' [FAIL]');
       buffer.writeln('${line.label}: ${line.value}$mark');
     }
+    buffer.writeln();
+    if (_callEntries.isNotEmpty) {
+      buffer
+        ..writeln('--- Llamadas (Call / WebRTC) ---')
+        ..writeln(
+          _callEntries.map((e) => e.formatLine()).join('\n\n'),
+        )
+        ..writeln();
+    }
     buffer
-      ..writeln()
-      ..writeln('--- Log ---')
+      ..writeln('--- Log completo ---')
       ..writeln(_log.exportText());
 
     await Clipboard.setData(ClipboardData(text: buffer.toString()));
@@ -79,7 +90,7 @@ class _GatewayDebugPageState extends State<GatewayDebugPage> {
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: const Text('Debug Gateway'),
+          title: const Text('Debug realtime'),
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Diagnóstico', icon: Icon(Icons.medical_services_outlined)),
@@ -127,12 +138,7 @@ class _GatewayDebugPageState extends State<GatewayDebugPage> {
                 _log.log('DebugUI', 'Reconexión manual solicitada');
               },
             ),
-            _CallLogTab(
-              entries: _log.entries
-                  .where((e) => e.tag == 'Call' || e.tag == 'WebRTC')
-                  .toList(),
-              autoRefresh: _autoRefresh,
-            ),
+            _CallLogTab(entries: _callEntries),
           ],
         ),
       ),
@@ -304,13 +310,9 @@ class _LogTile extends StatelessWidget {
 }
 
 class _CallLogTab extends StatelessWidget {
-  const _CallLogTab({
-    required this.entries,
-    required this.autoRefresh,
-  });
+  const _CallLogTab({required this.entries});
 
   final List<RealtimeDebugEntry> entries;
-  final bool autoRefresh;
 
   @override
   Widget build(BuildContext context) {

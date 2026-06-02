@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import 'dev_tools_config.dart';
 import 'realtime_debug_log.dart';
 
