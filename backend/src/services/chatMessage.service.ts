@@ -1,22 +1,20 @@
-import { ChatConversation, ChatMessage, ChatMessageKind } from '../models/Chat';
+import { prisma } from '../lib/prisma';
 import { assertDoctorPatientCanCommunicate } from './chatEligibility.service';
-import {
-  createChatNotification,
-  getSenderName,
-} from './notification.service';
+import { createChatNotification, getSenderName } from './notification.service';
+import { mapChatMessage } from '../utils/prismaMappers';
 
-export async function assertConversationParticipant(
-  conversationId: string,
-  userId: string,
-) {
-  const conversation = await ChatConversation.findById(conversationId);
+export type ChatMessageKind = 'chat' | 'clinical';
+
+export async function assertConversationParticipant(conversationId: string, userId: string) {
+  const conversation = await prisma.chatConversation.findUnique({
+    where: { id: conversationId },
+  });
   if (!conversation) {
     throw new Error('Conversación no encontrada');
   }
 
   const isParticipant =
-    conversation.doctorId.toString() === userId ||
-    conversation.patientId.toString() === userId;
+    conversation.doctorId === userId || conversation.patientId === userId;
 
   if (!isParticipant) {
     throw new Error('Acceso denegado');
@@ -39,33 +37,33 @@ export async function createChatMessage(params: {
   }
 
   const conversation = await assertConversationParticipant(conversationId, senderId);
-  await assertDoctorPatientCanCommunicate(
-    conversation.doctorId,
-    conversation.patientId,
-  );
+  await assertDoctorPatientCanCommunicate(conversation.doctorId, conversation.patientId);
 
-  const message = await ChatMessage.create({
-    conversationId,
-    senderId,
-    text: trimmed,
-    kind,
+  const message = await prisma.chatMessage.create({
+    data: { conversationId, senderId, text: trimmed, kind },
+    include: { sender: true },
   });
 
+  const now = new Date();
   if (kind === 'clinical') {
-    conversation.lastClinicalMessage = trimmed;
-    conversation.lastClinicalMessageAt = new Date();
+    await prisma.chatConversation.update({
+      where: { id: conversationId },
+      data: { lastClinicalMessage: trimmed, lastClinicalMessageAt: now },
+    });
   } else {
-    conversation.lastChatMessage = trimmed;
-    conversation.lastChatMessageAt = new Date();
-    conversation.lastMessage = trimmed;
-    conversation.lastMessageAt = new Date();
+    await prisma.chatConversation.update({
+      where: { id: conversationId },
+      data: {
+        lastChatMessage: trimmed,
+        lastChatMessageAt: now,
+        lastMessage: trimmed,
+        lastMessageAt: now,
+      },
+    });
   }
-  await conversation.save();
 
   const recipientId =
-    conversation.doctorId.toString() === senderId
-      ? conversation.patientId.toString()
-      : conversation.doctorId.toString();
+    conversation.doctorId === senderId ? conversation.patientId : conversation.doctorId;
 
   const senderName = await getSenderName(senderId);
   await createChatNotification({
@@ -76,6 +74,13 @@ export async function createChatMessage(params: {
     conversationId: conversation.id,
   });
 
-  const populated = await message.populate('senderId', 'name profilePic role');
-  return { message: populated, conversation, kind };
+  const updatedConversation = await prisma.chatConversation.findUniqueOrThrow({
+    where: { id: conversationId },
+  });
+
+  return {
+    message: mapChatMessage(message),
+    conversation: updatedConversation,
+    kind,
+  };
 }

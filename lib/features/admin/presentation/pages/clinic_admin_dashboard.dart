@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/services/app_realtime.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -22,11 +25,21 @@ class _ClinicAdminDashboardState extends State<ClinicAdminDashboard> {
   ClinicDashboardData? _data;
   bool _loading = true;
   String? _error;
+  StreamSubscription<Map<String, dynamic>>? _rosterSub;
 
   @override
   void initState() {
     super.initState();
+    _rosterSub = AppRealtime.chatSocket.onClinicRosterUpdated.listen((_) {
+      if (mounted) _load();
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _rosterSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -235,9 +248,9 @@ class _ClinicAdminDashboardState extends State<ClinicAdminDashboard> {
         ),
         const SizedBox(height: 12),
         _actionTile(
-          icon: Icons.mail_outline_rounded,
-          title: 'Invitar médico existente',
-          subtitle: 'Envía una solicitud; el doctor debe aceptar para unirse a la sede',
+          icon: Icons.groups_rounded,
+          title: 'Gestionar médicos',
+          subtitle: 'Invitar médicos al sistema o quitar los ya vinculados a esta sede',
           color: AppColors.primary,
           onTap: _openInviteDoctor,
         ),

@@ -15,49 +15,84 @@ build_error*.txt
 .svn/
 .swiftpm/
 migrate_working_dir/
+Thumbs.db
 
-# IntelliJ related
+# IntelliJ / Android Studio
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code (local settings; commit launch.json manually if the team shares it)
+.vscode/*
+!.vscode/launch.json
 
-# Flutter/Dart/Pub related
+# Flutter / Dart / Pub
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
 /coverage/
+*.g.dart.bak
 
-# Symbolication related
+# Flutter web build (scripts/serve-web-tunnel.sh, run-web-lan.sh)
+build/web/
+
+# Symbolication / obfuscation
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android build outputs
 /android/app/debug
 /android/app/profile
 /android/app/release
 
-# Environment / secrets
+# Environment / secrets (never commit real values)
 .env
 .env.*
 !.env.example
+.env.local
+.env.*.local
 
-# Generated CocoaPods dependencies
+# pnpm store at repo root (if created locally)
+.pnpm-store/
+
+# Node.js — backend, realtime-gateway, and any service folder
+**/node_modules/
+**/dist/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# CocoaPods
 /ios/Pods/
 /macos/Pods/
 
-# Keep Android Gradle wrapper for reproducible builds.
+# Keep Android Gradle wrapper for reproducible builds
 !android/gradlew
 !android/gradlew.bat
 !android/gradle/wrapper/gradle-wrapper.jar
+
+# Python (scripts/serve_web_no_cache.py)
+__pycache__/
+*.py[cod]
+.Python
+.venv/
+venv/
+
+# Local databases / dumps (dev only)
+*.sqlite
+*.sqlite3
+*.db
+dump.rdb
+
+# Cursor / local tooling
+.cursor/
+
+# OS / editor backups
+*~
+*.orig

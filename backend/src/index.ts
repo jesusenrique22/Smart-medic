@@ -1,10 +1,9 @@
-import http from 'http';
 import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 
 import { connectDatabase } from './config/db';
-import { initSocketServer } from './socket/socketServer';
+import { createCorsMiddleware } from './config/cors';
+import internalRealtimeRoutes from './routes/internalRealtime.routes';
 import authRoutes from './routes/auth.routes';
 import patientRoutes from './routes/patient.routes';
 import doctorRoutes from './routes/doctor.routes';
@@ -23,11 +22,21 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(createCorsMiddleware());
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'OK', message: 'Smart Medic API running' });
+});
+
+app.get('/', (_req, res) => {
+  res.status(200).json({
+    service: 'smart-medic-api',
+    status: 'OK',
+    message: 'API REST activa. Los endpoints están bajo /api/…',
+    health: '/health',
+    note: 'El WebSocket (chat/llamadas) está en el puerto 3001 (realtime-gateway), no aquí.',
+  });
 });
 
 app.use('/api/auth', authRoutes);
@@ -42,14 +51,16 @@ app.use('/api/clinic-admin', clinicAdminRoutes);
 app.use('/api/pharmacy-admin', pharmacyAdminRoutes);
 app.use('/api/pharmacy-staff', pharmacyStaffRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/internal/realtime', internalRealtimeRoutes);
 
 async function start() {
   try {
     await connectDatabase();
-    const httpServer = http.createServer(app);
-    initSocketServer(httpServer);
-    httpServer.listen(PORT, () => {
-      console.log(`Smart Medic Backend en puerto ${PORT} (HTTP + WebSocket)`);
+    app.listen(Number(PORT), '0.0.0.0', () => {
+      console.log(`Smart Medic API en puerto ${PORT} (0.0.0.0, REST)`);
+      console.log(
+        `Gateway WebSocket esperado en ${process.env.REALTIME_GATEWAY_URL || 'http://localhost:3001'}`,
+      );
     });
   } catch (error) {
     console.error('No se pudo iniciar el servidor:', error);

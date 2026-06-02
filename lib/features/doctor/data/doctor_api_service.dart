@@ -74,6 +74,15 @@ class DoctorFullProfile {
       ? 'Médico'
       : specialties.map((s) => s.name).join(' · ');
 
+  String get facilitySubtitle {
+    final names = facilities
+        .map((f) => f.name.trim())
+        .where((n) => n.isNotEmpty)
+        .toList();
+    if (names.isEmpty) return 'VITA OS';
+    return names.join(' · ');
+  }
+
   factory DoctorFullProfile.fromApi(Map<String, dynamic> data) {
     final user = data['user'] as Map<String, dynamic>? ?? {};
     final profile = data['profile'] as Map<String, dynamic>? ?? {};
@@ -104,10 +113,16 @@ class DoctorFullProfile {
       );
     }).toList();
 
-    final facilities = (profile['facilityIds'] as List<dynamic>? ?? [])
-        .whereType<Map<String, dynamic>>()
-        .map(DoctorFacilityItem.fromJson)
-        .toList();
+    final facilities = <DoctorFacilityItem>[];
+    for (final item in profile['facilityIds'] as List<dynamic>? ?? []) {
+      if (item is Map<String, dynamic>) {
+        facilities.add(DoctorFacilityItem.fromJson(item));
+      } else if (item != null) {
+        facilities.add(
+          DoctorFacilityItem(id: item.toString(), name: ''),
+        );
+      }
+    }
 
     return DoctorFullProfile(
       name: user['name'] as String? ?? 'Médico',
@@ -196,13 +211,15 @@ class DoctorApiService {
 
   Future<DoctorProfileContext> getProfileContext() async {
     final full = await getFullProfile();
-    final facilityPart =
-        full.facilities.isNotEmpty ? full.facilities.first.name : 'VITA OS';
+    final parts = <String>[];
+    if (full.specialtySubtitle.isNotEmpty &&
+        full.specialtySubtitle != 'Médico') {
+      parts.add(full.specialtySubtitle);
+    }
+    parts.add(full.facilitySubtitle);
     return DoctorProfileContext(
       name: full.name,
-      subtitle: full.specialtySubtitle.isNotEmpty
-          ? '${full.specialtySubtitle} • $facilityPart'
-          : facilityPart,
+      subtitle: parts.join(' • '),
       avatarUrl: full.avatarUrl,
       rating: full.rating,
       ratingCount: full.ratingCount,

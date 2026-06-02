@@ -1,13 +1,15 @@
 services:
-  mongo:
-    image: mongo:7
+  postgres:
+    image: postgres:16
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "5432:5432"
     volumes:
-      - mongo_data:/data/db
+      - postgres_data:/var/lib/postgresql/data
     environment:
-      MONGO_INITDB_DATABASE: smartmedic
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: smart_medic
 
 volumes:
-  mongo_data:
+  postgres_data:

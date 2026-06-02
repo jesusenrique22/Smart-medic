@@ -1,7 +1,5 @@
-import { IUser } from '../models/User';
+import { omitPassword, toApiDoc } from './apiDoc';
 
-export function sanitizeUser(user: IUser) {
-  const obj = user.toObject();
-  delete (obj as { password?: string }).password;
-  return obj;
+export function sanitizeUser(user: { id: string; password?: string; [key: string]: unknown }) {
+  return toApiDoc(omitPassword(user));
 }

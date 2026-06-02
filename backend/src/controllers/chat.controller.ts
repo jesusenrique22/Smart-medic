@@ -1,11 +1,11 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { ChatConversation, ChatMessage, ChatMessageKind } from '../models/Chat';
-import { User } from '../models/User';
+import { prisma } from '../lib/prisma';
 import { UserRole } from '../types/enums';
 import {
   assertConversationParticipant,
   createChatMessage,
+  ChatMessageKind,
 } from '../services/chatMessage.service';
 import {
   assertDoctorPatientCanCommunicate,
@@ -13,6 +13,10 @@ import {
   isEligiblePair,
   userIdFromRef,
 } from '../services/chatEligibility.service';
+import { mapChatConversation, mapChatMessage } from '../utils/prismaMappers';
+import { omitPassword, toApiDoc } from '../utils/apiDoc';
+import { buildMessageBroadcasts } from '../services/realtimeOrchestration.service';
+import { pushRealtimeBroadcasts } from '../socket/realtimeGatewayClient';
 
 function parseKind(value: unknown): ChatMessageKind | undefined {
   if (value === 'clinical' || value === 'chat') return value;
@@ -33,33 +37,33 @@ function mapChatError(res: Response, e: unknown) {
   return res.status(400).json({ error: msg });
 }
 
-/** Chats ya iniciados (conversaciones existentes del usuario). */
 export const listConversations = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
   const isDoctor = req.user!.role === UserRole.DOCTOR;
   const eligiblePeerIds = await getEligiblePeerIds(userId, isDoctor);
 
-  const filter = isDoctor ? { doctorId: userId } : { patientId: userId };
-
-  const conversations = await ChatConversation.find(filter)
-    .populate('doctorId', 'name email profilePic')
-    .populate('patientId', 'name email profilePic')
-    .sort({ lastChatMessageAt: -1, lastMessageAt: -1, updatedAt: -1 });
-
-  const filtered = conversations.filter((c) => {
-    const docId = userIdFromRef(c.doctorId);
-    const patId = userIdFromRef(c.patientId);
-    if (!docId || !patId) return false;
-    return isEligiblePair(docId, patId, eligiblePeerIds, isDoctor);
+  const conversations = await prisma.chatConversation.findMany({
+    where: isDoctor ? { doctorId: userId } : { patientId: userId },
+    include: { doctor: true, patient: true },
+    orderBy: [
+      { lastChatMessageAt: 'desc' },
+      { lastMessageAt: 'desc' },
+      { updatedAt: 'desc' },
+    ],
   });
+
+  const filtered = conversations
+    .map(mapChatConversation)
+    .filter((c) => {
+      const docId = userIdFromRef(c.doctorId);
+      const patId = userIdFromRef(c.patientId);
+      if (!docId || !patId) return false;
+      return isEligiblePair(docId, patId, eligiblePeerIds, isDoctor);
+    });
 
   res.json(filtered);
 };
 
-/**
- * Contactos para nueva conversación (+): con cita y sin chat abierto aún.
- * Query: forNew=true (por defecto en el botón + del cliente).
- */
 export const listContacts = async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
   const isDoctor = req.user!.role === UserRole.DOCTOR;
@@ -68,12 +72,12 @@ export const listContacts = async (req: AuthRequest, res: Response) => {
   let peerIds = await getEligiblePeerIds(userId, isDoctor);
 
   if (forNew && peerIds.length > 0) {
-    const convFilter = isDoctor ? { doctorId: userId } : { patientId: userId };
-    const existing = await ChatConversation.find(convFilter).select('doctorId patientId');
+    const existing = await prisma.chatConversation.findMany({
+      where: isDoctor ? { doctorId: userId } : { patientId: userId },
+      select: { doctorId: true, patientId: true },
+    });
     const existingPeerIds = new Set(
-      existing.map((c) =>
-        isDoctor ? userIdFromRef(c.patientId) : userIdFromRef(c.doctorId),
-      ),
+      existing.map((c) => (isDoctor ? c.patientId : c.doctorId)),
     );
     peerIds = peerIds.filter((id) => !existingPeerIds.has(id));
   }
@@ -82,9 +86,11 @@ export const listContacts = async (req: AuthRequest, res: Response) => {
     return res.json([]);
   }
 
-  const users = await User.find({ _id: { $in: peerIds } })
-    .select('name email profilePic role')
-    .sort({ name: 1 });
+  const users = await prisma.user.findMany({
+    where: { id: { in: peerIds } },
+    select: { id: true, name: true, email: true, profilePic: true, role: true },
+    orderBy: { name: 'asc' },
+  });
 
   return res.json(
     users.map((u) => ({
@@ -102,38 +108,46 @@ export const getClinicalFeed = async (req: AuthRequest, res: Response) => {
   const isDoctor = req.user!.role === UserRole.DOCTOR;
   const eligiblePeerIds = await getEligiblePeerIds(userId, isDoctor);
 
-  const convFilter = isDoctor ? { doctorId: userId } : { patientId: userId };
-  const conversations = await ChatConversation.find(convFilter).select(
-    '_id doctorId patientId',
-  );
+  const conversations = await prisma.chatConversation.findMany({
+    where: isDoctor ? { doctorId: userId } : { patientId: userId },
+    select: { id: true, doctorId: true, patientId: true },
+  });
 
   const convIds = conversations
     .filter((c) =>
-      isEligiblePair(
-        userIdFromRef(c.doctorId),
-        userIdFromRef(c.patientId),
-        eligiblePeerIds,
-        isDoctor,
-      ),
+      isEligiblePair(c.doctorId, c.patientId, eligiblePeerIds, isDoctor),
     )
-    .map((c) => c._id);
+    .map((c) => c.id);
 
-  const messages = await ChatMessage.find({
-    conversationId: { $in: convIds },
-    kind: 'clinical',
-  })
-    .populate('senderId', 'name profilePic role')
-    .populate({
-      path: 'conversationId',
-      populate: [
-        { path: 'doctorId', select: 'name profilePic' },
-        { path: 'patientId', select: 'name profilePic' },
-      ],
-    })
-    .sort({ createdAt: -1 })
-    .limit(200);
+  const messages = await prisma.chatMessage.findMany({
+    where: { conversationId: { in: convIds }, kind: 'clinical' },
+    include: {
+      sender: true,
+      conversation: { include: { doctor: true, patient: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+  });
 
-  res.json(messages);
+  res.json(
+    messages.map((m) =>
+      toApiDoc({
+        ...m,
+        senderId: m.sender ? toApiDoc(m.sender) : m.senderId,
+        conversationId: m.conversation
+          ? {
+              ...toApiDoc(m.conversation),
+              doctorId: m.conversation.doctor
+                ? toApiDoc(m.conversation.doctor)
+                : m.conversation.doctorId,
+              patientId: m.conversation.patient
+                ? toApiDoc(m.conversation.patient)
+                : m.conversation.patientId,
+            }
+          : m.conversationId,
+      }),
+    ),
+  );
 };
 
 export const getOrCreateConversation = async (req: AuthRequest, res: Response) => {
@@ -156,17 +170,19 @@ export const getOrCreateConversation = async (req: AuthRequest, res: Response) =
     return mapChatError(res, e);
   }
 
-  let conversation = await ChatConversation.findOne({ doctorId: docId, patientId: patId });
+  let conversation = await prisma.chatConversation.findUnique({
+    where: { doctorId_patientId: { doctorId: docId, patientId: patId } },
+    include: { doctor: true, patient: true },
+  });
+
   if (!conversation) {
-    conversation = await ChatConversation.create({ doctorId: docId, patientId: patId });
+    conversation = await prisma.chatConversation.create({
+      data: { doctorId: docId, patientId: patId },
+      include: { doctor: true, patient: true },
+    });
   }
 
-  const populated = await conversation.populate([
-    { path: 'doctorId', select: 'name email profilePic' },
-    { path: 'patientId', select: 'name email profilePic' },
-  ]);
-
-  res.json(populated);
+  res.json(mapChatConversation(conversation));
 };
 
 export const getMessages = async (req: AuthRequest, res: Response) => {
@@ -185,25 +201,34 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
   }
 
   const kind = parseKind(req.query.kind) ?? 'chat';
-  const messages = await ChatMessage.find({
-    conversationId: conversation.id,
-    kind,
-  })
-    .populate('senderId', 'name profilePic role')
-    .sort({ createdAt: 1 });
+  const messages = await prisma.chatMessage.findMany({
+    where: { conversationId: conversation.id, kind },
+    include: { sender: true },
+    orderBy: { createdAt: 'asc' },
+  });
 
-  res.json(messages);
+  res.json(messages.map(mapChatMessage));
 };
 
 export const sendMessage = async (req: AuthRequest, res: Response) => {
   const { conversationId, text, kind } = req.body;
   try {
-    const { message } = await createChatMessage({
+    const parsedKind = parseKind(kind);
+    const { message, conversation, kind: messageKind } = await createChatMessage({
       conversationId,
       senderId: req.user!.id,
       text,
-      kind: parseKind(kind),
+      kind: parsedKind,
     });
+    const broadcasts = buildMessageBroadcasts(
+      req.user!.id,
+      conversationId,
+      message,
+      messageKind,
+      conversation,
+      String(text).trim(),
+    );
+    await pushRealtimeBroadcasts(broadcasts);
     res.status(201).json(message);
   } catch (e) {
     return mapChatError(res, e);

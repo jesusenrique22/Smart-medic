@@ -11,6 +11,8 @@ class ClinicDoctorListItem {
   final String? profilePic;
   final List<String> specialties;
   final List<String> facilityNames;
+  final bool canInvite;
+  final String? inviteBlockedReason;
 
   const ClinicDoctorListItem({
     required this.userId,
@@ -20,11 +22,24 @@ class ClinicDoctorListItem {
     this.profilePic,
     required this.specialties,
     required this.facilityNames,
+    this.canInvite = true,
+    this.inviteBlockedReason,
   });
 
+  static String _idFrom(dynamic value) {
+    if (value == null) return '';
+    if (value is Map) {
+      return value['_id']?.toString() ?? value['id']?.toString() ?? '';
+    }
+    return value.toString();
+  }
+
   factory ClinicDoctorListItem.fromJson(Map<String, dynamic> j) {
-    final user = j['user'] as Map<String, dynamic>? ?? {};
-    final profile = j['profile'] as Map<String, dynamic>? ?? {};
+    final user = j['user'] as Map<String, dynamic>?;
+    if (user == null) {
+      throw const FormatException('Doctor sin datos de usuario');
+    }
+    final profile = j['profile'] as Map<String, dynamic>?;
 
     List<String> names(dynamic list) {
       if (list == null) return [];
@@ -35,13 +50,15 @@ class ClinicDoctorListItem {
     }
 
     return ClinicDoctorListItem(
-      userId: user['_id'] as String? ?? '',
+      userId: _idFrom(user['_id'] ?? user['id']),
       name: user['name'] as String? ?? '',
       email: user['email'] as String? ?? '',
       phone: user['phone'] as String?,
       profilePic: user['profilePic'] as String?,
-      specialties: names(profile['specialtyIds']),
-      facilityNames: names(profile['facilityIds']),
+      specialties: profile != null ? names(profile['specialtyIds']) : const [],
+      facilityNames: profile != null ? names(profile['facilityIds']) : const [],
+      canInvite: j['canInvite'] as bool? ?? true,
+      inviteBlockedReason: j['inviteBlockedReason'] as String?,
     );
   }
 }
@@ -123,15 +140,35 @@ class ClinicAdminApiService {
     return ClinicDashboardData.fromJson(data as Map<String, dynamic>);
   }
 
+  Future<List<ClinicDoctorListItem>> listFacilityDoctors() async {
+    final data = await _client.get('/api/clinic-admin/doctors');
+    final list = data as List<dynamic>;
+    final doctors = <ClinicDoctorListItem>[];
+    for (final raw in list) {
+      if (raw is! Map) continue;
+      try {
+        doctors.add(ClinicDoctorListItem.fromJson(Map<String, dynamic>.from(raw)));
+      } catch (_) {}
+    }
+    return doctors;
+  }
+
   Future<List<ClinicDoctorListItem>> listAssignableDoctors({String? search}) async {
     final query = search != null && search.trim().isNotEmpty
         ? '?search=${Uri.encodeQueryComponent(search.trim())}'
         : '';
     final data = await _client.get('/api/clinic-admin/doctors/assignable$query');
     final list = data as List<dynamic>;
-    return list
-        .map((e) => ClinicDoctorListItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final doctors = <ClinicDoctorListItem>[];
+    for (final raw in list) {
+      if (raw is! Map) continue;
+      try {
+        doctors.add(ClinicDoctorListItem.fromJson(Map<String, dynamic>.from(raw)));
+      } catch (_) {
+        // Omitir entradas corruptas del API.
+      }
+    }
+    return doctors;
   }
 
   Future<String> assignDoctor(String doctorUserId) async {

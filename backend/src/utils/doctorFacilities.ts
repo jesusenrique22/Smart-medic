@@ -1,13 +1,15 @@
-import { Types } from 'mongoose';
-import { DoctorProfile } from '../models/DoctorProfile';
+import { prisma } from '../lib/prisma';
 
 export async function doctorHasFacility(
   doctorUserId: string,
   facilityId: string,
 ): Promise<boolean> {
-  const profile = await DoctorProfile.findOne({ userId: doctorUserId }).select('facilityIds');
+  const profile = await prisma.doctorProfile.findUnique({
+    where: { userId: doctorUserId },
+    include: { facilities: { where: { facilityId } } },
+  });
   if (!profile) return false;
-  return profile.facilityIds.some((id) => id.toString() === facilityId);
+  return profile.facilities.length > 0;
 }
 
 export async function assertDoctorFacility(
@@ -20,6 +22,10 @@ export async function assertDoctorFacility(
   }
 }
 
-export function facilityIdsAsStrings(facilityIds: Types.ObjectId[]): string[] {
-  return facilityIds.map((id) => id.toString());
+export function facilityIdsAsStrings(facilityIds: { facilityId: string }[] | string[]): string[] {
+  if (facilityIds.length === 0) return [];
+  if (typeof facilityIds[0] === 'string') {
+    return facilityIds as string[];
+  }
+  return (facilityIds as { facilityId: string }[]).map((f) => f.facilityId);
 }

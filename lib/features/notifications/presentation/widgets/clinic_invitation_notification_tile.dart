@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/app_realtime.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../doctor/data/doctor_api_service.dart';
 import '../../domain/models/notification_models.dart';
@@ -34,6 +35,7 @@ class _ClinicInvitationNotificationTileState
     try {
       final msg = await _doctorApi.acceptClinicInvitation(id);
       if (!mounted) return;
+      AppRealtime.notifyDoctorProfileRefresh();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg), backgroundColor: AppColors.secondary),
       );

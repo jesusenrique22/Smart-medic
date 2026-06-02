@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../../../core/auth/app_session.dart';
 import '../../../../core/services/app_realtime.dart';
+import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -30,6 +33,8 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
   DoctorProfileContext? _profile;
   bool _loadingAppts = false;
   bool _telemedicineRequestDismissed = false;
+  StreamSubscription<Map<String, dynamic>>? _notifSub;
+  StreamSubscription<void>? _profileRefreshSub;
 
   bool get _showRequest =>
       !_telemedicineRequestDismissed &&
@@ -43,8 +48,32 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
   @override
   void initState() {
     super.initState();
-    AppRealtime.connectIfNeeded();
+    _notifSub = AppRealtime.chatSocket.onNotificationNew.listen(_onRealtimeNotification);
+    _profileRefreshSub =
+        AppRealtime.onDoctorProfileRefresh.listen((_) => _loadProfile());
     _refreshDashboard();
+  }
+
+  void _onRealtimeNotification(Map<String, dynamic> data) {
+    final category = data['category']?.toString();
+    if (category != 'CLINIC_INVITATION') return;
+    _loadProfile();
+    _loadAppointments();
+    final title = data['title']?.toString() ?? '';
+    if (!mounted || title != 'Invitación a clínica') return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Tienes una nueva invitación de clínica. Revisa el icono de campana.'),
+        duration: Duration(seconds: 5),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _notifSub?.cancel();
+    _profileRefreshSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _refreshDashboard() async {
@@ -684,11 +713,14 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
 
   Widget _buildSectionHeader(String title, String? action) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
         ),
         if (action != null)
           TextButton(
@@ -829,7 +861,7 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
                     icon:
                         const Icon(Icons.videocam, color: AppColors.primary),
                     onPressed: () =>
-                        Navigator.pushNamed(context, AppRoutes.videoCall),
+                        AppNavigation.openTelemedicineViaMessages(context),
                   )
                 else
                   const Icon(Icons.arrow_forward_ios,
@@ -907,11 +939,8 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pushNamed(
-                    context,
-                    AppRoutes.videoCall,
-                    arguments: 'Lucía Mendez',
-                  ),
+                  onPressed: () =>
+                      AppNavigation.openTelemedicineViaMessages(context),
                   style: ElevatedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

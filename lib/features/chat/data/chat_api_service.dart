@@ -243,8 +243,8 @@ class ChatApiService {
     String? patientId,
   }) async {
     final body = <String, dynamic>{
-      if (doctorId != null) 'doctorId': doctorId,
-      if (patientId != null) 'patientId': patientId,
+      'doctorId': ?doctorId,
+      'patientId': ?patientId,
     };
     final data = await _client.post('/api/chat/conversations', body, auth: true);
     return ChatConversationItem.fromJson(data);

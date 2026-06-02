@@ -1,15 +1,14 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { User } from '../models/User';
-import { Pharmacy } from '../models/Pharmacy';
-import { PharmacyOrder } from '../models/PharmacyOrder';
+import { prisma } from '../lib/prisma';
 import { PharmacyOrderStatus } from '../types/enums';
 import { sanitizeUser } from '../utils/sanitizeUser';
+import { toApiDoc } from '../utils/apiDoc';
 
 async function getPharmacyStaffContext(userId: string) {
-  const user = await User.findById(userId);
+  const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.pharmacyId) return null;
-  const pharmacy = await Pharmacy.findById(user.pharmacyId);
+  const pharmacy = await prisma.pharmacy.findUnique({ where: { id: user.pharmacyId } });
   return { user, pharmacy };
 }
 
@@ -20,7 +19,7 @@ export const getMyContext = async (req: AuthRequest, res: Response) => {
   }
   res.json({
     user: sanitizeUser(ctx.user),
-    pharmacy: ctx.pharmacy,
+    pharmacy: ctx.pharmacy ? toApiDoc(ctx.pharmacy) : null,
   });
 };
 
@@ -30,10 +29,12 @@ export const listOrders = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
 
-  const orders = await PharmacyOrder.find({ pharmacyId: ctx.pharmacy._id })
-    .sort({ createdAt: -1 })
-    .limit(100);
-  res.json(orders);
+  const orders = await prisma.pharmacyOrder.findMany({
+    where: { pharmacyId: ctx.pharmacy.id },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+  res.json(orders.map(toApiDoc));
 };
 
 export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
@@ -47,13 +48,14 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Estado inválido' });
   }
 
-  const order = await PharmacyOrder.findOne({
-    _id: req.params.id,
-    pharmacyId: ctx.pharmacy._id,
+  const order = await prisma.pharmacyOrder.findFirst({
+    where: { id: req.params.id, pharmacyId: ctx.pharmacy.id },
   });
   if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-  order.status = status;
-  await order.save();
-  res.json(order);
+  const updated = await prisma.pharmacyOrder.update({
+    where: { id: order.id },
+    data: { status },
+  });
+  res.json(toApiDoc(updated));
 };

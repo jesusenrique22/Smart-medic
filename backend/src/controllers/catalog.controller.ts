@@ -1,43 +1,52 @@
 import { Request, Response } from 'express';
-import { Specialty } from '../models/Specialty';
-import { MedicalFacility } from '../models/MedicalFacility';
-import { DoctorProfile } from '../models/DoctorProfile';
-import { User } from '../models/User';
+import { prisma } from '../lib/prisma';
 import { AppointmentType, UserRole } from '../types/enums';
 import { getAvailableSlots } from '../services/slots.service';
 import { getDoctorConsultationDuration } from '../services/doctorDuration.service';
+import { doctorProfileInclude, mapDoctorProfile } from '../utils/prismaMappers';
+import { omitPassword, toApiDoc } from '../utils/apiDoc';
 
 export const listSpecialties = async (_req: Request, res: Response) => {
-  const specialties = await Specialty.find().sort({ name: 1 });
-  res.json(specialties);
+  const specialties = await prisma.specialty.findMany({ orderBy: { name: 'asc' } });
+  res.json(specialties.map(toApiDoc));
 };
 
 export const listFacilities = async (_req: Request, res: Response) => {
-  const facilities = await MedicalFacility.find({
-    isActive: true,
-    serviceEnabled: true,
-  }).sort({ name: 1 });
-  res.json(facilities);
+  const facilities = await prisma.medicalFacility.findMany({
+    where: { isActive: true, serviceEnabled: true },
+    orderBy: { name: 'asc' },
+  });
+  res.json(facilities.map(toApiDoc));
 };
 
 export const listDoctors = async (req: Request, res: Response) => {
-  const filter: Record<string, unknown> = {};
-  if (req.query.specialtyId) filter.specialtyIds = req.query.specialtyId;
-  if (req.query.facilityId) filter.facilityIds = req.query.facilityId;
+  const where: {
+    specialties?: { some: { specialtyId: string } };
+    facilities?: { some: { facilityId: string } };
+  } = {};
 
-  const profiles = await DoctorProfile.find(filter)
-    .populate('specialtyIds')
-    .populate('facilityIds');
+  if (req.query.specialtyId) {
+    where.specialties = { some: { specialtyId: String(req.query.specialtyId) } };
+  }
+  if (req.query.facilityId) {
+    where.facilities = { some: { facilityId: String(req.query.facilityId) } };
+  }
+
+  const profiles = await prisma.doctorProfile.findMany({
+    where,
+    include: doctorProfileInclude,
+  });
 
   const userIds = profiles.map((p) => p.userId);
-  const users = await User.find({ _id: { $in: userIds }, role: UserRole.DOCTOR }).select(
-    '-password',
-  );
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds }, role: UserRole.DOCTOR },
+  });
+  const usersSafe = users.map((u) => toApiDoc(omitPassword(u)));
 
   res.json(
     profiles.map((profile) => ({
-      profile,
-      user: users.find((u) => u.id === profile.userId.toString()) ?? null,
+      profile: mapDoctorProfile(profile),
+      user: usersSafe.find((u) => u.id === profile.userId) ?? null,
     })),
   );
 };

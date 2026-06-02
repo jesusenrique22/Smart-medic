@@ -20,7 +20,7 @@ abstract final class IncomingCallDialog {
       barrierLabel: 'Llamada entrante',
       barrierColor: Colors.black.withValues(alpha: 0.65),
       transitionDuration: const Duration(milliseconds: 280),
-      pageBuilder: (ctx, _, __) {
+      pageBuilder: (ctx, _, _) {
         return SafeArea(
           child: Center(
             child: Padding(

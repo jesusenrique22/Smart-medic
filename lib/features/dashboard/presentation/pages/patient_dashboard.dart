@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/appointment_datetime.dart';
@@ -554,7 +555,7 @@ class _PatientDashboardPageState extends State<PatientDashboardPage> {
                     IconButton(
                       icon: const Icon(Icons.videocam_rounded),
                       onPressed: () =>
-                          Navigator.pushNamed(context, AppRoutes.videoCall),
+                          AppNavigation.openTelemedicineViaMessages(context),
                     ),
                 ],
               ),

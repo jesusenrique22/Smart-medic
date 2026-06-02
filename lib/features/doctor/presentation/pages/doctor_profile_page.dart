@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/services/app_realtime.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -37,15 +40,19 @@ class _DoctorProfilePageState extends State<DoctorProfilePage> {
   bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
+  StreamSubscription<void>? _profileRefreshSub;
 
   @override
   void initState() {
     super.initState();
+    _profileRefreshSub =
+        AppRealtime.onDoctorProfileRefresh.listen((_) => _load());
     _load();
   }
 
   @override
   void dispose() {
+    _profileRefreshSub?.cancel();
     _nameController.dispose();
     _bioController.dispose();
     _licenseController.dispose();

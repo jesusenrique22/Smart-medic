@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/app_session.dart';
@@ -70,7 +72,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _onAuthSuccess(AuthResponse response) async {
     AppSession.setSession(user: response.user, tokenValue: response.token);
-    AppRealtime.connectIfNeeded();
+    AppRealtime.reconnectAfterAuth();
     if (response.user.role == Role.patient) {
       await PatientProfileRepository.refreshFromApi();
     }
@@ -846,6 +848,11 @@ class _LoginPageState extends State<LoginPage> {
         'Farmacia',
         Icons.inventory_2_rounded,
         () => _enterMockRole(Role.pharmacy, AppRoutes.pharmacyAdmin),
+      ),
+      _DemoEntry(
+        'Laboratorio',
+        Icons.biotech_rounded,
+        () => _loginAsDemo('lab@tech.com'),
       ),
     ];
 

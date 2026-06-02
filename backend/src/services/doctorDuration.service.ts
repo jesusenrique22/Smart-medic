@@ -1,17 +1,18 @@
-import { DoctorProfile } from '../models/DoctorProfile';
+import { prisma } from '../lib/prisma';
 import { normalizeDuration } from './slots.service';
 
 export async function getDoctorConsultationDuration(
   doctorId: string,
   specialtyId?: string,
 ): Promise<number> {
-  const profile = await DoctorProfile.findOne({ userId: doctorId });
+  const profile = await prisma.doctorProfile.findUnique({
+    where: { userId: doctorId },
+    include: { specialtyDurations: true },
+  });
   if (!profile) return 30;
 
-  if (specialtyId && profile.specialtyConsultationDurations?.length) {
-    const match = profile.specialtyConsultationDurations.find(
-      (entry) => entry.specialtyId.toString() === specialtyId,
-    );
+  if (specialtyId && profile.specialtyDurations.length) {
+    const match = profile.specialtyDurations.find((entry) => entry.specialtyId === specialtyId);
     if (match?.durationMinutes) {
       return normalizeDuration(match.durationMinutes);
     }

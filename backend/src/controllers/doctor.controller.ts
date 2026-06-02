@@ -1,17 +1,10 @@
 import { Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../middleware/auth';
-import { User } from '../models/User';
-import { DoctorProfile } from '../models/DoctorProfile';
-import { DoctorWorkSchedule } from '../models/DoctorWorkSchedule';
-import { Appointment } from '../models/Appointment';
-import { MedicalHistory } from '../models/MedicalHistory';
-import { PatientProfile } from '../models/PatientProfile';
-import { ChatConversation } from '../models/Chat';
+import { prisma } from '../lib/prisma';
 import { AppointmentStatus } from '../types/enums';
 import { recordCompletedVisit } from './appointment.controller';
 import { assertDoctorFacility } from '../utils/doctorFacilities';
-import { IWeightControlRecord } from '../models/PatientProfile';
 import {
   acceptClinicInvitation as acceptClinicInvitationService,
   rejectClinicInvitation as rejectClinicInvitationService,
@@ -23,17 +16,34 @@ import {
   updateDoctorProfileDetails,
   updateSpecialtyConsultationDuration,
 } from '../services/doctorProfileSpecialty.service';
+import {
+  appointmentInclude,
+  doctorProfileInclude,
+  mapAppointment,
+  mapDoctorProfile,
+  mapMedicalHistory,
+  mapWorkSchedule,
+} from '../utils/prismaMappers';
+import { omitPassword, toApiDoc } from '../utils/apiDoc';
+
+interface WeightControlRecord {
+  weightKg?: string;
+  fatPercent?: string;
+  visceral?: string;
+  muscleKg?: string;
+  bmi?: string;
+  doseDate?: string;
+  dose?: string;
+}
 
 async function assertGeneralMedicineDoctor(doctorId: string): Promise<void> {
-  const profile = await DoctorProfile.findOne({ userId: doctorId }).populate(
-    'specialtyIds',
-    'name',
-  );
+  const profile = await prisma.doctorProfile.findUnique({
+    where: { userId: doctorId },
+    include: { specialties: { include: { specialty: true } } },
+  });
   if (!profile) throw new Error('Perfil de médico no encontrado');
 
-  const names = (profile.specialtyIds as unknown as { name: string }[]).map((s) =>
-    s.name.toLowerCase(),
-  );
+  const names = profile.specialties.map((s) => s.specialty.name.toLowerCase());
   const isGeneral = names.some((n) => n.includes('medicina general') || n === 'general');
   if (!isGeneral) {
     throw new Error(
@@ -52,7 +62,7 @@ export const changeMyPassword = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
   }
 
-  const user = await User.findById(req.user!.id);
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
   const isMatch = await bcrypt.compare(currentPassword, user.password);
@@ -60,37 +70,58 @@ export const changeMyPassword = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'La contraseña actual no es correcta' });
   }
 
-  user.password = await bcrypt.hash(String(newPassword), 10);
-  await user.save();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { password: await bcrypt.hash(String(newPassword), 10) },
+  });
 
   res.json({ message: 'Contraseña actualizada correctamente' });
 };
 
 export const getMyProfile = async (req: AuthRequest, res: Response) => {
-  const profile = await DoctorProfile.findOne({ userId: req.user!.id })
-    .populate('specialtyIds')
-    .populate('facilityIds');
-  const user = await User.findById(req.user!.id).select('-password');
-  res.json({ user, profile });
+  const profile = await prisma.doctorProfile.findUnique({
+    where: { userId: req.user!.id },
+    include: doctorProfileInclude,
+  });
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  res.json({
+    user: user ? toApiDoc(omitPassword(user)) : null,
+    profile: profile ? mapDoctorProfile(profile) : null,
+  });
 };
 
 export const updateMyProfile = async (req: AuthRequest, res: Response) => {
-  const profile = await DoctorProfile.findOneAndUpdate(
-    { userId: req.user!.id },
-    { $set: req.body },
-    { new: true, runValidators: true },
-  )
-    .populate('specialtyIds')
-    .populate('facilityIds');
-  if (!profile) return res.status(404).json({ error: 'Perfil de doctor no encontrado' });
-  res.json(profile);
+  const existing = await prisma.doctorProfile.findUnique({ where: { userId: req.user!.id } });
+  if (!existing) return res.status(404).json({ error: 'Perfil de doctor no encontrado' });
+
+  const allowed = [
+    'documentId',
+    'licenseNumber',
+    'bio',
+    'consultationPriceOnline',
+    'consultationPricePresential',
+    'defaultConsultationMinutes',
+  ] as const;
+  const data: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) data[key] = req.body[key];
+  }
+
+  const profile = await prisma.doctorProfile.update({
+    where: { id: existing.id },
+    data,
+    include: doctorProfileInclude,
+  });
+  res.json(mapDoctorProfile(profile));
 };
 
 export const getMySchedules = async (req: AuthRequest, res: Response) => {
-  const schedules = await DoctorWorkSchedule.find({ doctorId: req.user!.id, isActive: true })
-    .populate('facilityId')
-    .sort({ dayOfWeek: 1, startTime: 1 });
-  res.json(schedules);
+  const schedules = await prisma.doctorWorkSchedule.findMany({
+    where: { doctorId: req.user!.id, isActive: true },
+    include: { facility: true },
+    orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+  });
+  res.json(schedules.map(mapWorkSchedule));
 };
 
 export const createSchedule = async (req: AuthRequest, res: Response) => {
@@ -104,12 +135,11 @@ export const createSchedule = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: (e as Error).message });
   }
 
-  const schedule = await DoctorWorkSchedule.create({
-    ...req.body,
-    doctorId: req.user!.id,
+  const schedule = await prisma.doctorWorkSchedule.create({
+    data: { ...req.body, doctorId: req.user!.id },
+    include: { facility: true },
   });
-  const populated = await schedule.populate('facilityId');
-  res.status(201).json(populated);
+  res.status(201).json(mapWorkSchedule(schedule));
 };
 
 export const updateSchedule = async (req: AuthRequest, res: Response) => {
@@ -121,73 +151,82 @@ export const updateSchedule = async (req: AuthRequest, res: Response) => {
     }
   }
 
-  const schedule = await DoctorWorkSchedule.findOneAndUpdate(
-    { _id: req.params.id, doctorId: req.user!.id },
-    { $set: req.body },
-    { new: true },
-  ).populate('facilityId');
-  if (!schedule) return res.status(404).json({ error: 'Horario no encontrado' });
-  res.json(schedule);
+  const existing = await prisma.doctorWorkSchedule.findFirst({
+    where: { id: req.params.id, doctorId: req.user!.id },
+  });
+  if (!existing) return res.status(404).json({ error: 'Horario no encontrado' });
+
+  const schedule = await prisma.doctorWorkSchedule.update({
+    where: { id: existing.id },
+    data: req.body,
+    include: { facility: true },
+  });
+  res.json(mapWorkSchedule(schedule));
 };
 
 export const deleteSchedule = async (req: AuthRequest, res: Response) => {
-  const result = await DoctorWorkSchedule.findOneAndDelete({
-    _id: req.params.id,
-    doctorId: req.user!.id,
+  const result = await prisma.doctorWorkSchedule.deleteMany({
+    where: { id: req.params.id, doctorId: req.user!.id },
   });
-  if (!result) return res.status(404).json({ error: 'Horario no encontrado' });
+  if (result.count === 0) return res.status(404).json({ error: 'Horario no encontrado' });
   res.json({ message: 'Horario eliminado' });
 };
 
 export const getMyAppointments = async (req: AuthRequest, res: Response) => {
-  const filter: Record<string, unknown> = { doctorId: req.user!.id };
-  if (req.query.status) filter.status = req.query.status;
+  const where: {
+    doctorId: string;
+    status?: string;
+    dateTime?: { gte: Date; lt: Date };
+  } = { doctorId: req.user!.id };
+
+  if (req.query.status) where.status = String(req.query.status);
   if (req.query.date) {
     const day = new Date(req.query.date as string);
     const next = new Date(day);
     next.setDate(next.getDate() + 1);
-    filter.dateTime = { $gte: day, $lt: next };
+    where.dateTime = { gte: day, lt: next };
   }
 
-  const appointments = await Appointment.find(filter)
-    .populate('patientId', 'name email profilePic phone')
-    .populate('facilityId', 'name address')
-    .populate('specialtyId', 'name')
-    .sort({ dateTime: 1 });
-  res.json(appointments);
+  const appointments = await prisma.appointment.findMany({
+    where,
+    include: appointmentInclude,
+    orderBy: { dateTime: 'asc' },
+  });
+  res.json(appointments.map(mapAppointment));
 };
 
 export const updateAppointmentStatus = async (req: AuthRequest, res: Response) => {
   const { status, notes, clinicalNotes } = req.body;
 
-  const appointment = await Appointment.findOne({
-    _id: req.params.id,
-    doctorId: req.user!.id,
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: req.params.id, doctorId: req.user!.id },
   });
   if (!appointment) return res.status(404).json({ error: 'Cita no encontrada' });
 
-  if (status) appointment.status = status;
-  if (notes !== undefined) appointment.notes = notes;
+  const updateData: { status?: string; notes?: string } = {};
+  if (status) updateData.status = status;
+  if (notes !== undefined) updateData.notes = notes;
 
   if (status === AppointmentStatus.COMPLETED) {
     await recordCompletedVisit(appointment, req.user!.id, clinicalNotes);
   }
 
-  await appointment.save();
+  await prisma.appointment.update({
+    where: { id: appointment.id },
+    data: updateData,
+  });
 
-  const populated = await Appointment.findById(appointment.id)
-    .populate('patientId', 'name email profilePic phone')
-    .populate('facilityId', 'name address')
-    .populate('specialtyId', 'name');
-
-  res.json(populated);
+  const populated = await prisma.appointment.findUnique({
+    where: { id: appointment.id },
+    include: appointmentInclude,
+  });
+  res.json(populated ? mapAppointment(populated) : null);
 };
 
 export const getPatientMedicalHistory = async (req: AuthRequest, res: Response) => {
-  // Solo médicos que hayan tenido al menos una cita con el paciente
-  const hasRelation = await Appointment.exists({
-    doctorId: req.user!.id,
-    patientId: req.params.patientId,
+  const hasRelation = await prisma.appointment.findFirst({
+    where: { doctorId: req.user!.id, patientId: req.params.patientId },
+    select: { id: true },
   });
   if (!hasRelation) {
     return res.status(403).json({
@@ -196,42 +235,58 @@ export const getPatientMedicalHistory = async (req: AuthRequest, res: Response) 
   }
 
   const [history, profile] = await Promise.all([
-    MedicalHistory.findOne({ patientId: req.params.patientId })
-      .populate('entries.doctorId', 'name email'),
-    PatientProfile.findOne({ userId: req.params.patientId }),
+    prisma.medicalHistory.findUnique({
+      where: { patientId: req.params.patientId },
+      include: { entries: { include: { doctor: true }, orderBy: { date: 'desc' } } },
+    }),
+    prisma.patientProfile.findUnique({ where: { userId: req.params.patientId } }),
   ]);
 
-  res.json({ profile: profile ?? null, history: history ?? { entries: [] } });
+  res.json({
+    profile: profile ? toApiDoc(profile) : null,
+    history: history ? mapMedicalHistory(history) : { entries: [] },
+  });
 };
 
 export const addMedicalHistoryEntry = async (req: AuthRequest, res: Response) => {
   const { patientId } = req.params;
 
-  const hasRelation = await Appointment.exists({
-    doctorId: req.user!.id,
-    patientId,
+  const hasRelation = await prisma.appointment.findFirst({
+    where: { doctorId: req.user!.id, patientId },
+    select: { id: true },
   });
   if (!hasRelation) {
     return res.status(403).json({ error: 'Sin relación médico-paciente' });
   }
 
-  const entry = {
-    ...req.body,
-    doctorId: req.user!.id,
-    date: req.body.date ? new Date(req.body.date) : new Date(),
-  };
+  let history = await prisma.medicalHistory.findUnique({ where: { patientId } });
+  if (!history) {
+    history = await prisma.medicalHistory.create({ data: { patientId } });
+  }
 
-  const history = await MedicalHistory.findOneAndUpdate(
-    { patientId },
-    { $push: { entries: entry } },
-    { new: true, upsert: true },
-  );
-  res.status(201).json(history);
+  await prisma.medicalHistoryEntry.create({
+    data: {
+      medicalHistoryId: history.id,
+      doctorId: req.user!.id,
+      title: req.body.title,
+      description: req.body.description,
+      diagnosis: req.body.diagnosis,
+      treatment: req.body.treatment,
+      date: req.body.date ? new Date(req.body.date) : new Date(),
+      attachments: req.body.attachments ?? [],
+    },
+  });
+
+  const updated = await prisma.medicalHistory.findUniqueOrThrow({
+    where: { id: history.id },
+    include: { entries: { include: { doctor: true }, orderBy: { date: 'desc' } } },
+  });
+  res.status(201).json(mapMedicalHistory(updated));
 };
 
 export const updatePatientWeightControls = async (req: AuthRequest, res: Response) => {
   const { patientId } = req.params;
-  const { weightControls } = req.body as { weightControls?: IWeightControlRecord[] };
+  const { weightControls } = req.body as { weightControls?: WeightControlRecord[] };
 
   if (!Array.isArray(weightControls)) {
     return res.status(400).json({ error: 'weightControls debe ser un arreglo' });
@@ -243,9 +298,9 @@ export const updatePatientWeightControls = async (req: AuthRequest, res: Respons
     return res.status(403).json({ error: (e as Error).message });
   }
 
-  const hasRelation = await Appointment.exists({
-    doctorId: req.user!.id,
-    patientId,
+  const hasRelation = await prisma.appointment.findFirst({
+    where: { doctorId: req.user!.id, patientId },
+    select: { id: true },
   });
   if (!hasRelation) {
     return res.status(403).json({
@@ -253,44 +308,83 @@ export const updatePatientWeightControls = async (req: AuthRequest, res: Respons
     });
   }
 
-  const profile = await PatientProfile.findOneAndUpdate(
-    { userId: patientId },
-    { $set: { weightControls } },
-    { new: true },
-  );
+  const profile = await prisma.patientProfile.findUnique({ where: { userId: patientId } });
   if (!profile) return res.status(404).json({ error: 'Perfil del paciente no encontrado' });
 
-  res.json(profile);
+  await prisma.$transaction([
+    prisma.patientWeightControl.deleteMany({ where: { patientProfileId: profile.id } }),
+    prisma.patientWeightControl.createMany({
+      data: weightControls.map((w, i) => ({
+        patientProfileId: profile.id,
+        sortOrder: i,
+        weightKg: w.weightKg,
+        fatPercent: w.fatPercent,
+        visceral: w.visceral,
+        muscleKg: w.muscleKg,
+        bmi: w.bmi,
+        doseDate: w.doseDate,
+        dose: w.dose,
+      })),
+    }),
+  ]);
+
+  const updated = await prisma.patientProfile.findUniqueOrThrow({
+    where: { id: profile.id },
+    include: { weightControls: { orderBy: { sortOrder: 'asc' } } },
+  });
+
+  const { weightControls: wc, ...rest } = updated;
+  res.json(
+    toApiDoc({
+      ...rest,
+      weightControls: wc.map((w) => ({
+        weightKg: w.weightKg,
+        fatPercent: w.fatPercent,
+        visceral: w.visceral,
+        muscleKg: w.muscleKg,
+        bmi: w.bmi,
+        doseDate: w.doseDate,
+        dose: w.dose,
+      })),
+    }),
+  );
 };
 
 export const getMyPatients = async (req: AuthRequest, res: Response) => {
-  const apptPatients = await Appointment.distinct('patientId', {
-    doctorId: req.user!.id,
+  const apptPatients = await prisma.appointment.findMany({
+    where: { doctorId: req.user!.id },
+    select: { patientId: true },
+    distinct: ['patientId'],
   });
-  const chatPatients = await ChatConversation.distinct('patientId', {
-    doctorId: req.user!.id,
+  const chatPatients = await prisma.chatConversation.findMany({
+    where: { doctorId: req.user!.id },
+    select: { patientId: true },
   });
-  const ids = [...new Set([...apptPatients.map(String), ...chatPatients.map(String)])];
-  const users = await User.find({ _id: { $in: ids } }).select('-password');
-  const profiles = await PatientProfile.find({ userId: { $in: ids } });
+  const ids = [
+    ...new Set([
+      ...apptPatients.map((a) => a.patientId),
+      ...chatPatients.map((c) => c.patientId),
+    ]),
+  ];
+
+  const users = await prisma.user.findMany({ where: { id: { in: ids } } });
+  const profiles = await prisma.patientProfile.findMany({ where: { userId: { in: ids } } });
+
   res.json(
-    users.map((u) => ({
-      user: u,
-      profile: profiles.find((pr) => pr.userId.toString() === u.id) ?? null,
-    })),
+    users.map((u) => {
+      const pr = profiles.find((p) => p.userId === u.id);
+      return {
+        user: toApiDoc(omitPassword(u)),
+        profile: pr ? toApiDoc(pr) : null,
+      };
+    }),
   );
 };
 
 export const addMySpecialty = async (req: AuthRequest, res: Response) => {
   try {
-    const profile = await addSpecialtyToDoctorProfile(
-      req.user!.id,
-      String(req.body.specialtyId),
-    );
-    res.status(201).json({
-      message: 'Especialidad agregada a tu perfil',
-      profile,
-    });
+    const profile = await addSpecialtyToDoctorProfile(req.user!.id, String(req.body.specialtyId));
+    res.status(201).json({ message: 'Especialidad agregada a tu perfil', profile });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }
@@ -313,14 +407,8 @@ export const createAndAddMySpecialty = async (req: AuthRequest, res: Response) =
 
 export const removeMySpecialty = async (req: AuthRequest, res: Response) => {
   try {
-    const profile = await removeSpecialtyFromDoctorProfile(
-      req.user!.id,
-      req.params.specialtyId,
-    );
-    res.json({
-      message: 'Especialidad eliminada de tu perfil',
-      profile,
-    });
+    const profile = await removeSpecialtyFromDoctorProfile(req.user!.id, req.params.specialtyId);
+    res.json({ message: 'Especialidad eliminada de tu perfil', profile });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }
@@ -342,11 +430,7 @@ export const updateMySpecialtyDuration = async (req: AuthRequest, res: Response)
 export const patchMyProfileDetails = async (req: AuthRequest, res: Response) => {
   try {
     const result = await updateDoctorProfileDetails(req.user!.id, req.body);
-    res.json({
-      message: 'Perfil actualizado',
-      user: result.user,
-      profile: result.profile,
-    });
+    res.json({ message: 'Perfil actualizado', user: result.user, profile: result.profile });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }
@@ -367,9 +451,7 @@ export const acceptClinicInvitation = async (req: AuthRequest, res: Response) =>
 export const rejectClinicInvitation = async (req: AuthRequest, res: Response) => {
   try {
     const result = await rejectClinicInvitationService(req.params.id, req.user!.id);
-    res.json({
-      message: `Rechazaste la invitación a ${result.facilityName}`,
-    });
+    res.json({ message: `Rechazaste la invitación a ${result.facilityName}` });
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }

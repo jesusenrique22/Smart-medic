@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -580,9 +581,8 @@ class _AppointmentCard extends StatelessWidget {
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: isOnline
-                          ? () => Navigator.pushNamed(
+                          ? () => AppNavigation.openTelemedicineViaMessages(
                                 context,
-                                AppRoutes.videoCall,
                               )
                           : null,
                       style: ElevatedButton.styleFrom(

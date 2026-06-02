@@ -7,9 +7,11 @@ class OverviewStats {
   final int doctors;
   final int clinicAdmins;
   final int pharmacyAdmins;
+  final int labTechs;
   final int appointments;
   final int facilities;
   final int pharmacies;
+  final int laboratories;
   final int pharmacyOrders;
   final int productsListed;
 
@@ -18,9 +20,11 @@ class OverviewStats {
     required this.doctors,
     required this.clinicAdmins,
     required this.pharmacyAdmins,
+    required this.labTechs,
     required this.appointments,
     required this.facilities,
     required this.pharmacies,
+    required this.laboratories,
     required this.pharmacyOrders,
     required this.productsListed,
   });
@@ -30,9 +34,11 @@ class OverviewStats {
         doctors: (j['doctors'] as num?)?.toInt() ?? 0,
         clinicAdmins: (j['clinicAdmins'] as num?)?.toInt() ?? 0,
         pharmacyAdmins: (j['pharmacyAdmins'] as num?)?.toInt() ?? 0,
+        labTechs: (j['labTechs'] as num?)?.toInt() ?? 0,
         appointments: (j['appointments'] as num?)?.toInt() ?? 0,
         facilities: (j['facilities'] as num?)?.toInt() ?? 0,
         pharmacies: (j['pharmacies'] as num?)?.toInt() ?? 0,
+        laboratories: (j['laboratories'] as num?)?.toInt() ?? 0,
         pharmacyOrders: (j['pharmacyOrders'] as num?)?.toInt() ?? 0,
         productsListed: (j['productsListed'] as num?)?.toInt() ?? 0,
       );
@@ -98,6 +104,30 @@ class PharmacyStatItem {
   }
 }
 
+class LaboratoryStatItem {
+  final String id;
+  final String name;
+  final bool serviceEnabled;
+  final int staffCount;
+
+  LaboratoryStatItem({
+    required this.id,
+    required this.name,
+    required this.serviceEnabled,
+    required this.staffCount,
+  });
+
+  factory LaboratoryStatItem.fromJson(Map<String, dynamic> j) {
+    final l = j['laboratory'] as Map<String, dynamic>? ?? {};
+    return LaboratoryStatItem(
+      id: l['id']?.toString() ?? l['_id']?.toString() ?? '',
+      name: l['name'] as String? ?? '',
+      serviceEnabled: l['serviceEnabled'] as bool? ?? true,
+      staffCount: (j['staffCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class StaffCreateResult {
   final String email;
   final String name;
@@ -139,6 +169,13 @@ class SuperAdminApiService {
         .toList();
   }
 
+  Future<List<LaboratoryStatItem>> getLaboratoryStats() async {
+    final data = await _client.get('/api/super-admin/stats/laboratories');
+    return (data as List)
+        .map((e) => LaboratoryStatItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<void> setFacilityService(String id, bool enabled) async {
     await _client.patch('/api/super-admin/facilities/$id/service', {
       'serviceEnabled': enabled,
@@ -147,6 +184,12 @@ class SuperAdminApiService {
 
   Future<void> setPharmacyService(String id, bool enabled) async {
     await _client.patch('/api/super-admin/pharmacies/$id/service', {
+      'serviceEnabled': enabled,
+    });
+  }
+
+  Future<void> setLaboratoryService(String id, bool enabled) async {
+    await _client.patch('/api/super-admin/laboratories/$id/service', {
       'serviceEnabled': enabled,
     });
   }
@@ -189,6 +232,25 @@ class SuperAdminApiService {
     return StaffCreateResult.fromJson(data);
   }
 
+  Future<StaffCreateResult> createLabTech({
+    required String name,
+    required String email,
+    required String phone,
+    required String laboratoryId,
+  }) async {
+    final data = await _client.post(
+      '/api/super-admin/admins/lab-tech',
+      {
+        'name': name.trim(),
+        'email': email.trim(),
+        'phone': phone.trim(),
+        'laboratoryId': laboratoryId,
+      },
+      auth: true,
+    );
+    return StaffCreateResult.fromJson(data);
+  }
+
   Future<List<Map<String, dynamic>>> listFacilities() async {
     final data = await _client.get('/api/super-admin/facilities');
     return (data as List).cast<Map<String, dynamic>>();
@@ -218,5 +280,29 @@ class SuperAdminApiService {
   Future<List<Map<String, dynamic>>> listPharmacies() async {
     final data = await _client.get('/api/super-admin/pharmacies');
     return (data as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> listLaboratories() async {
+    final data = await _client.get('/api/super-admin/laboratories');
+    return (data as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> createLaboratory({
+    required String name,
+    required String address,
+    String? phone,
+    String? logoUrl,
+  }) async {
+    final data = await _client.post(
+      '/api/super-admin/laboratories',
+      {
+        'name': name.trim(),
+        'address': address.trim(),
+        if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+        if (logoUrl != null && logoUrl.trim().isNotEmpty) 'logoUrl': logoUrl.trim(),
+      },
+      auth: true,
+    );
+    return data;
   }
 }

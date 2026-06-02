@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User';
-import { PatientProfile } from '../models/PatientProfile';
-import { MedicalHistory } from '../models/MedicalHistory';
+import { prisma } from '../lib/prisma';
 import { UserRole } from '../types/enums';
 import { sanitizeUser } from '../utils/sanitizeUser';
 
@@ -15,13 +13,17 @@ async function createRoleProfile(
   data: { name: string; email: string; phone?: string },
 ) {
   if (role === UserRole.PATIENT) {
-    await PatientProfile.create({
-      userId,
-      fullName: data.name,
-      email: data.email,
-      phone: data.phone,
+    await prisma.patientProfile.create({
+      data: {
+        userId,
+        fullName: data.name,
+        email: data.email,
+        phone: data.phone,
+      },
     });
-    await MedicalHistory.create({ patientId: userId, entries: [] });
+    await prisma.medicalHistory.create({
+      data: { patientId: userId },
+    });
   }
 }
 
@@ -35,16 +37,18 @@ export const register = async (req: Request, res: Response) => {
   }
 
   try {
-    const existing = await User.findOne({ email: email.toLowerCase() });
+    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (existing) return res.status(400).json({ error: 'El correo ya está registrado' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      name,
-      role,
-      phone,
+    const user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        name,
+        role,
+        phone,
+      },
     });
 
     await createRoleProfile(user.id, role, { name, email: user.email, phone });
@@ -61,7 +65,7 @@ export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   try {
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -82,7 +86,7 @@ export const login = async (req: Request, res: Response) => {
 export const me = async (req: Request, res: Response) => {
   const authReq = req as import('../middleware/auth').AuthRequest;
   try {
-    const user = await User.findById(authReq.user?.id);
+    const user = await prisma.user.findUnique({ where: { id: authReq.user?.id } });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     res.json({ user: sanitizeUser(user) });
   } catch {

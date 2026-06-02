@@ -1,7 +1,6 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { Types } from 'mongoose';
-import { User } from '../models/User';
+import { prisma } from '../lib/prisma';
 import { UserRole } from '../types/enums';
 import { sanitizeUser } from '../utils/sanitizeUser';
 
@@ -17,12 +16,13 @@ export interface CreateStaffUserInput {
   createdBy: string;
   managedFacilityId?: string;
   pharmacyId?: string;
+  laboratoryId?: string;
 }
 
 export async function createStaffUser(input: CreateStaffUserInput) {
   const emailNorm = input.email.toLowerCase().trim();
 
-  const existing = await User.findOne({ email: emailNorm });
+  const existing = await prisma.user.findUnique({ where: { email: emailNorm } });
   if (existing) {
     throw new Error('El correo ya está registrado');
   }
@@ -30,18 +30,19 @@ export async function createStaffUser(input: CreateStaffUserInput) {
   const temporaryPassword = generateTemporaryPassword();
   const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
-  const user = await User.create({
-    email: emailNorm,
-    password: hashedPassword,
-    name: input.name.trim(),
-    role: input.role,
-    phone: input.phone?.trim(),
-    managedFacilityId: input.managedFacilityId
-      ? new Types.ObjectId(input.managedFacilityId)
-      : undefined,
-    pharmacyId: input.pharmacyId ? new Types.ObjectId(input.pharmacyId) : undefined,
-    createdBy: new Types.ObjectId(input.createdBy),
-    isActive: true,
+  const user = await prisma.user.create({
+    data: {
+      email: emailNorm,
+      password: hashedPassword,
+      name: input.name.trim(),
+      role: input.role,
+      phone: input.phone?.trim(),
+      managedFacilityId: input.managedFacilityId,
+      pharmacyId: input.pharmacyId,
+      laboratoryId: input.laboratoryId,
+      createdById: input.createdBy,
+      isActive: true,
+    },
   });
 
   return {

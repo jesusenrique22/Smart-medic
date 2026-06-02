@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/services/app_realtime.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -23,11 +26,21 @@ class _NotificationsDropdownState extends State<NotificationsDropdown> {
   List<AppNotification> _items = [];
   bool _loading = true;
   String? _error;
+  StreamSubscription<Map<String, dynamic>>? _socketSub;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _socketSub = AppRealtime.chatSocket.onNotificationNew.listen((_) {
+      if (mounted) _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _socketSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -191,7 +204,7 @@ class _NotificationsDropdownState extends State<NotificationsDropdown> {
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: _items.length,
-        separatorBuilder: (context, _) => const Divider(height: 1, indent: 56),
+        separatorBuilder: (_, _) => const Divider(height: 1, indent: 56),
         itemBuilder: (_, i) {
           final n = _items[i];
           if (n.isPendingClinicInvitation) {

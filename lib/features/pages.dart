@@ -29,6 +29,8 @@ export 'ambulance/presentation/pages/paramedic_transit_screen.dart';
 export 'ambulance/presentation/pages/clinic_reception_screen.dart';
 export 'laboratory/presentation/pages/lab_marketplace_screen.dart';
 export 'laboratory/presentation/pages/lab_technician_dashboard.dart';
+export 'laboratory/presentation/pages/lab_exams_catalog_page.dart';
+export 'laboratory/presentation/pages/lab_register_exam_page.dart';
 export 'laboratory/presentation/pages/patient_results_screen.dart';
 export 'clinics/presentation/pages/clinic_network_screen.dart';
 export 'clinics/presentation/pages/er_incoming_dashboard.dart';

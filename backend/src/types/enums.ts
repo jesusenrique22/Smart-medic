@@ -11,6 +11,8 @@ export enum UserRole {
   PHARMACIST = 'PHARMACIST',
   /** Cajero de farmacia */
   PHARMACY_CASHIER = 'PHARMACY_CASHIER',
+  /** Técnico de laboratorio clínico */
+  LAB_TECH = 'LAB_TECH',
   /** @deprecated Usar SUPER_ADMIN */
   ADMIN = 'ADMIN',
 }

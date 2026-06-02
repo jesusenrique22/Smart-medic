@@ -35,6 +35,19 @@ class AppNavigation {
     }
   }
 
+  /// Las videollamadas requieren una conversación activa (Mensajes).
+  static void openTelemedicineViaMessages(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Abre Mensajes, elige un chat con tu médico o paciente y usa el botón de llamada.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+    Navigator.pushNamed(context, AppRoutes.messages);
+  }
+
   static void safeBack(BuildContext context, {String? fallbackRoute}) {
     final navigator = Navigator.of(context);
     if (navigator.canPop()) {

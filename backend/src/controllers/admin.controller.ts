@@ -1,59 +1,60 @@
 import { Response } from 'express';
-import { User } from '../models/User';
-import { Appointment } from '../models/Appointment';
-import { MedicalFacility } from '../models/MedicalFacility';
-import { Specialty } from '../models/Specialty';
-import { DoctorProfile } from '../models/DoctorProfile';
+import { prisma } from '../lib/prisma';
 import { sanitizeUser } from '../utils/sanitizeUser';
 import { UserRole } from '../types/enums';
+import { doctorProfileInclude, mapDoctorProfile } from '../utils/prismaMappers';
+import { omitPassword, toApiDoc } from '../utils/apiDoc';
 
 export const listUsers = async (req: import('../middleware/auth').AuthRequest, res: Response) => {
-  const filter: Record<string, unknown> = {};
-  if (req.query.role) filter.role = req.query.role;
+  const where: { role?: string } = {};
+  if (req.query.role) where.role = String(req.query.role);
 
-  const users = await User.find(filter).select('-password').sort({ createdAt: -1 });
+  const users = await prisma.user.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
   res.json(users.map(sanitizeUser));
 };
 
 export const getStats = async (_req: import('../middleware/auth').AuthRequest, res: Response) => {
   const [patients, doctors, admins, appointments, facilities, specialties] = await Promise.all([
-    User.countDocuments({ role: 'PATIENT' }),
-    User.countDocuments({ role: 'DOCTOR' }),
-    User.countDocuments({ role: 'ADMIN' }),
-    Appointment.countDocuments(),
-    MedicalFacility.countDocuments({ isActive: true }),
-    Specialty.countDocuments(),
+    prisma.user.count({ where: { role: UserRole.PATIENT } }),
+    prisma.user.count({ where: { role: UserRole.DOCTOR } }),
+    prisma.user.count({ where: { role: UserRole.ADMIN } }),
+    prisma.appointment.count(),
+    prisma.medicalFacility.count({ where: { isActive: true } }),
+    prisma.specialty.count(),
   ]);
 
   res.json({ patients, doctors, admins, appointments, facilities, specialties });
 };
 
 export const createFacility = async (req: import('../middleware/auth').AuthRequest, res: Response) => {
-  const facility = await MedicalFacility.create(req.body);
-  res.status(201).json(facility);
+  const facility = await prisma.medicalFacility.create({ data: req.body });
+  res.status(201).json(toApiDoc(facility));
 };
 
 export const createSpecialty = async (req: import('../middleware/auth').AuthRequest, res: Response) => {
-  const specialty = await Specialty.create(req.body);
-  res.status(201).json(specialty);
+  const specialty = await prisma.specialty.create({ data: req.body });
+  res.status(201).json(toApiDoc(specialty));
 };
 
 export const listDoctors = async (_req: import('../middleware/auth').AuthRequest, res: Response) => {
-  const profiles = await DoctorProfile.find()
-    .populate('specialtyIds')
-    .populate('facilityIds')
-    .sort({ createdAt: -1 });
+  const profiles = await prisma.doctorProfile.findMany({
+    include: doctorProfileInclude,
+    orderBy: { createdAt: 'desc' },
+  });
 
   const userIds = profiles.map((p) => p.userId);
-  const users = await User.find({ _id: { $in: userIds }, role: UserRole.DOCTOR }).select(
-    '-password',
-  );
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds }, role: UserRole.DOCTOR },
+  });
+  const usersSafe = users.map((u) => toApiDoc(omitPassword(u)));
 
   res.json(
     profiles.map((profile) => ({
-      profile,
-      user: users.find((u) => u.id === profile.userId.toString()) ?? null,
+      profile: mapDoctorProfile(profile),
+      user: usersSafe.find((u) => u.id === profile.userId) ?? null,
     })),
   );
 };
-

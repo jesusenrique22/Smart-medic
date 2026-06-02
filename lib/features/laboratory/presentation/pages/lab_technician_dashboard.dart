@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
+
+import '../../../../core/auth/app_session.dart';
+import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
-import '../../domain/models/laboratory_models.dart';
-import '../../domain/models/lab_data_mock.dart';
 import '../../../notifications/presentation/widgets/notification_badge.dart';
+import '../../domain/models/lab_exam_catalog.dart';
+import '../../domain/models/lab_work_order.dart';
+import '../../domain/services/lab_workflow_service.dart';
+import 'lab_exams_catalog_page.dart';
+import 'lab_process_exam_page.dart';
+import 'lab_register_exam_page.dart';
 
 class LabTechnicianDashboard extends StatefulWidget {
   const LabTechnicianDashboard({super.key});
@@ -13,107 +20,209 @@ class LabTechnicianDashboard extends StatefulWidget {
 }
 
 class _LabTechnicianDashboardState extends State<LabTechnicianDashboard> {
-  final List<LabResult> _pendingRequests = LabDataMock.results
-      .where((r) => r.status == LabResultStatus.pending)
-      .toList();
+  final _workflow = LabWorkflowService.instance;
 
-  void _showUploadModal(LabResult request) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _UploadResultModal(request: request),
+  @override
+  void initState() {
+    super.initState();
+    _workflow.seedDemoIfEmpty();
+  }
+
+  void _refresh() => setState(() {});
+
+  Future<void> _openOrder(LabWorkOrder order) async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute<bool>(
+        builder: (_) => LabProcessExamPage(orderId: order.id),
+      ),
     );
+    if (updated == true) _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
+    final pending = _workflow.pending;
+    final inProgress = _workflow.inProgress;
+    final completedToday = _workflow.completedToday;
+
     return ResponsiveScaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Panel de Laboratorio'),
-        actions: const [
-          NotificationBadge(),
-          SizedBox(width: 16),
+        title: const Text('Laboratorio clínico'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _refresh,
+          ),
+          const NotificationBadge(),
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, color: Colors.red),
+            tooltip: 'Cerrar sesión',
+            onPressed: () {
+              AppSession.clear();
+              Navigator.pushReplacementNamed(context, AppRoutes.login);
+            },
+          ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: Column(
-        children: [
-          _buildSummaryCards(),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Row(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          await Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => const LabRegisterExamPage(),
+            ),
+          );
+          _refresh();
+        },
+        backgroundColor: AppColors.primary,
+        icon: const Icon(Icons.add_rounded, color: Colors.white),
+        label: const Text(
+          'Nuevo examen',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async => _refresh(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+          children: [
+            _buildWelcomeCard(),
+            const SizedBox(height: 20),
+            _buildStatsRow(
+              pending: pending.length,
+              inProgress: inProgress.length,
+              completed: completedToday.length,
+            ),
+            const SizedBox(height: 28),
+            _buildSectionTitle('Realizar exámenes por muestra'),
+            const SizedBox(height: 12),
+            _buildSampleTypeGrid(),
+            const SizedBox(height: 28),
+            Row(
               children: [
-                Text(
-                  'Solicitudes Pendientes',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                _buildSectionTitle('Órdenes activas'),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const LabExamsCatalogPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Catálogo completo'),
                 ),
-                Spacer(),
-                Icon(Icons.filter_list, size: 20, color: Colors.grey),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (pending.isEmpty && inProgress.isEmpty)
+              _emptyOrdersHint()
+            else ...[
+              ...inProgress.map((o) => _orderCard(o, highlight: true)),
+              ...pending.map((o) => _orderCard(o)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWelcomeCard() {
+    final name = AppSession.currentUser?.name ?? 'Técnico de laboratorio';
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary,
+            AppColors.primary.withValues(alpha: 0.85),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Panel de laboratorio',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Hola, $name',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${LabExamCatalog.all.length} tipos de examen · sangre, orina, heces y más',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
               ],
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              itemCount: _pendingRequests.length + 2, // Simulamos un par más
-              itemBuilder: (context, index) {
-                // Usamos el mock real o uno simulado para llenar la lista
-                final result = index < _pendingRequests.length
-                    ? _pendingRequests[index]
-                    : LabDataMock.results.first;
-
-                return _buildPendingCard(result);
-              },
-            ),
+          Icon(
+            Icons.biotech_rounded,
+            size: 56,
+            color: Colors.white.withValues(alpha: 0.25),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryCards() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      child: Row(
-        children: [
-          _statCard('Pendientes', '12', Colors.orange),
-          const SizedBox(width: 16),
-          _statCard('Entregados', '45', Colors.green),
-        ],
-      ),
+  Widget _buildStatsRow({
+    required int pending,
+    required int inProgress,
+    required int completed,
+  }) {
+    return Row(
+      children: [
+        _stat('Pendientes', '$pending', Colors.orange),
+        const SizedBox(width: 10),
+        _stat('En proceso', '$inProgress', Colors.blue),
+        const SizedBox(width: 10),
+        _stat('Hoy', '$completed', Colors.green),
+      ],
     );
   }
 
-  Widget _statCard(String label, String value, Color color) {
+  Widget _stat(String label, String value, Color color) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               value,
               style: TextStyle(
-                fontSize: 28,
+                fontSize: 24,
                 fontWeight: FontWeight.bold,
                 color: color,
               ),
             ),
             Text(
               label,
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ],
         ),
@@ -121,162 +230,142 @@ class _LabTechnicianDashboardState extends State<LabTechnicianDashboard> {
     );
   }
 
-  Widget _buildPendingCard(LabResult result) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primaryLight),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            backgroundColor: AppColors.background,
-            child: Icon(Icons.person, color: AppColors.primary),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Paciente: Juan Pérez',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'ID Examen: ${result.id}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => _showUploadModal(result),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text('Cargar', style: TextStyle(fontSize: 12)),
-          ),
-        ],
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.bold,
+        color: AppColors.primary,
       ),
     );
   }
-}
 
-class _UploadResultModal extends StatelessWidget {
-  final LabResult request;
-  const _UploadResultModal({required this.request});
+  Widget _buildSampleTypeGrid() {
+    final types = LabSampleType.values
+        .where((t) => LabExamCatalog.countForType(t) > 0)
+        .toList();
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 1.35,
       ),
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Cargar Resultado Médico',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Solicitud #${request.id}',
-            style: const TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: 32),
-
-          // Dropzone Placeholder
-          Container(
-            width: double.infinity,
-            height: 200,
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                style: BorderStyle.none,
-              ), // Aquí iría borde punteado
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.cloud_upload_outlined,
-                  size: 50,
-                  color: AppColors.primary.withValues(alpha: 0.5),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Arrastra el PDF aquí o haz clic para buscar',
-                  style: TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w500,
+      itemCount: types.length,
+      itemBuilder: (context, i) {
+        final type = types[i];
+        final count = LabExamCatalog.countForType(type);
+        return Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => _openCategory(type),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: type.color.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: type.color.withValues(alpha: 0.12),
+                    child: Icon(type.icon, color: type.color),
                   ),
-                ),
-                const Text(
-                  'Soporta: PDF, JPG, PNG',
-                  style: TextStyle(color: Colors.grey, fontSize: 10),
-                ),
-              ],
+                  const Spacer(),
+                  Text(
+                    type.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    '$count exámenes',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
             ),
           ),
+        );
+      },
+    );
+  }
 
-          const SizedBox(height: 32),
-          const Text(
-            'Observaciones del Técnico (Opcional)',
-            style: TextStyle(fontWeight: FontWeight.bold),
+  void _openCategory(LabSampleType type) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => LabExamsCatalogPage(initialSampleType: type),
+      ),
+    ).then((_) => _refresh());
+  }
+
+  Widget _orderCard(LabWorkOrder order, {bool highlight = false}) {
+    final exam = order.exam;
+    final type = exam?.sampleType;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: highlight
+            ? BorderSide(color: Colors.blue.shade200, width: 1.5)
+            : BorderSide.none,
+      ),
+      child: ListTile(
+        onTap: () => _openOrder(order),
+        leading: CircleAvatar(
+          backgroundColor: (type?.color ?? AppColors.primary)
+              .withValues(alpha: 0.12),
+          child: Icon(
+            type?.icon ?? Icons.science_rounded,
+            color: type?.color ?? AppColors.primary,
           ),
+        ),
+        title: Text(
+          order.patientName,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+        subtitle: Text(
+          '${exam?.name ?? order.examId} · ${order.status.label}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
+      ),
+    );
+  }
+
+  Widget _emptyOrdersHint() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.inbox_rounded, size: 48, color: Colors.grey.shade400),
           const SizedBox(height: 12),
-          TextField(
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText:
-                  'Ej: Valores normales, se recomienda control en 6 meses...',
-              filled: true,
-              fillColor: AppColors.background,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-            ),
+          const Text(
+            'No hay órdenes pendientes',
+            style: TextStyle(fontWeight: FontWeight.w600),
           ),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Resultado publicado exitosamente'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              minimumSize: const Size(double.infinity, 60),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            child: const Text(
-              'Publicar Resultado',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          const SizedBox(height: 4),
+          Text(
+            'Registra un examen o elige una categoría arriba',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
           ),
         ],
       ),

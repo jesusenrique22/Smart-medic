@@ -1,12 +1,9 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { Types } from 'mongoose';
-import { User } from '../models/User';
-import { DoctorProfile } from '../models/DoctorProfile';
-import { Specialty } from '../models/Specialty';
-import { MedicalFacility } from '../models/MedicalFacility';
+import { prisma } from '../lib/prisma';
 import { UserRole } from '../types/enums';
 import { sanitizeUser } from '../utils/sanitizeUser';
+import { doctorProfileInclude, mapDoctorProfile } from '../utils/prismaMappers';
 
 export interface CreateDoctorInput {
   name: string;
@@ -15,7 +12,6 @@ export interface CreateDoctorInput {
   documentId: string;
   specialtyId: string;
   facilityIds: string[];
-  /** Si se define, facilityIds debe ser subconjunto (admin de clínica) */
   allowedFacilityIds?: string[];
 }
 
@@ -29,17 +25,17 @@ export async function createDoctorByAdmin(input: CreateDoctorInput) {
   const emailNorm = email.toLowerCase().trim();
   const docNorm = documentId.trim().toUpperCase();
 
-  const existingUser = await User.findOne({ email: emailNorm });
+  const existingUser = await prisma.user.findUnique({ where: { email: emailNorm } });
   if (existingUser) {
     throw new Error('El correo ya está registrado');
   }
 
-  const existingDoc = await DoctorProfile.findOne({ documentId: docNorm });
+  const existingDoc = await prisma.doctorProfile.findUnique({ where: { documentId: docNorm } });
   if (existingDoc) {
     throw new Error('La cédula ya está asociada a otro médico');
   }
 
-  const specialty = await Specialty.findById(specialtyId);
+  const specialty = await prisma.specialty.findUnique({ where: { id: specialtyId } });
   if (!specialty) {
     throw new Error('Especialidad no encontrada');
   }
@@ -58,10 +54,12 @@ export async function createDoctorByAdmin(input: CreateDoctorInput) {
     }
   }
 
-  const facilities = await MedicalFacility.find({
-    _id: { $in: uniqueFacilityIds },
-    isActive: true,
-    serviceEnabled: true,
+  const facilities = await prisma.medicalFacility.findMany({
+    where: {
+      id: { in: uniqueFacilityIds },
+      isActive: true,
+      serviceEnabled: true,
+    },
   });
   if (facilities.length !== uniqueFacilityIds.length) {
     throw new Error('Una o más clínicas no son válidas, están inactivas o sin servicio');
@@ -70,28 +68,32 @@ export async function createDoctorByAdmin(input: CreateDoctorInput) {
   const temporaryPassword = generateTemporaryPassword();
   const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
 
-  const user = await User.create({
-    email: emailNorm,
-    password: hashedPassword,
-    name: name.trim(),
-    role: UserRole.DOCTOR,
-    phone: phone.trim(),
+  const user = await prisma.user.create({
+    data: {
+      email: emailNorm,
+      password: hashedPassword,
+      name: name.trim(),
+      role: UserRole.DOCTOR,
+      phone: phone.trim(),
+    },
   });
 
-  const profile = await DoctorProfile.create({
-    userId: user.id,
-    documentId: docNorm,
-    specialtyIds: [new Types.ObjectId(specialtyId)],
-    facilityIds: uniqueFacilityIds.map((id) => new Types.ObjectId(id)),
+  const profile = await prisma.doctorProfile.create({
+    data: {
+      userId: user.id,
+      documentId: docNorm,
+      specialties: { create: [{ specialtyId }] },
+      facilities: { create: uniqueFacilityIds.map((facilityId) => ({ facilityId })) },
+      specialtyDurations: {
+        create: { specialtyId, durationMinutes: 30 },
+      },
+    },
+    include: doctorProfileInclude,
   });
-
-  const populated = await DoctorProfile.findById(profile.id)
-    .populate('specialtyIds')
-    .populate('facilityIds');
 
   return {
     user: sanitizeUser(user),
-    profile: populated,
+    profile: mapDoctorProfile(profile),
     temporaryPassword,
   };
 }

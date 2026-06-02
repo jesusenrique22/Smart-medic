@@ -1,48 +1,55 @@
-import { Types } from 'mongoose';
-import { DoctorProfile } from '../models/DoctorProfile';
-import { Specialty } from '../models/Specialty';
-import { User } from '../models/User';
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+import { prisma } from '../lib/prisma';
+import {
+  doctorProfileInclude,
+  mapDoctorProfile,
+} from '../utils/prismaMappers';
+import { omitPassword, toApiDoc } from '../utils/apiDoc';
 
 async function getDoctorProfileOrThrow(doctorUserId: string) {
-  const profile = await DoctorProfile.findOne({ userId: doctorUserId });
+  const profile = await prisma.doctorProfile.findUnique({ where: { userId: doctorUserId } });
   if (!profile) throw new Error('Perfil de médico no encontrado');
   return profile;
 }
 
-export async function addSpecialtyToDoctorProfile(
-  doctorUserId: string,
-  specialtyId: string,
-) {
-  const specialty = await Specialty.findById(specialtyId);
+async function loadMappedProfile(profileId: string) {
+  const profile = await prisma.doctorProfile.findUniqueOrThrow({
+    where: { id: profileId },
+    include: doctorProfileInclude,
+  });
+  return mapDoctorProfile(profile);
+}
+
+export async function addSpecialtyToDoctorProfile(doctorUserId: string, specialtyId: string) {
+  const specialty = await prisma.specialty.findUnique({ where: { id: specialtyId } });
   if (!specialty) throw new Error('Especialidad no encontrada');
 
   const profile = await getDoctorProfileOrThrow(doctorUserId);
-  const sid = new Types.ObjectId(specialtyId);
 
-  if (profile.specialtyIds.some((id) => id.equals(sid))) {
-    throw new Error('Ya tienes esta especialidad en tu perfil');
-  }
+  const existing = await prisma.doctorProfileSpecialty.findUnique({
+    where: {
+      doctorProfileId_specialtyId: { doctorProfileId: profile.id, specialtyId },
+    },
+  });
+  if (existing) throw new Error('Ya tienes esta especialidad en tu perfil');
 
-  profile.specialtyIds.push(sid);
-  if (
-    !profile.specialtyConsultationDurations.some((entry) =>
-      entry.specialtyId.equals(sid),
-    )
-  ) {
-    profile.specialtyConsultationDurations.push({
-      specialtyId: sid,
-      durationMinutes: profile.defaultConsultationMinutes ?? 30,
-    });
-  }
+  await prisma.$transaction([
+    prisma.doctorProfileSpecialty.create({
+      data: { doctorProfileId: profile.id, specialtyId },
+    }),
+    prisma.doctorSpecialtyDuration.upsert({
+      where: {
+        doctorProfileId_specialtyId: { doctorProfileId: profile.id, specialtyId },
+      },
+      create: {
+        doctorProfileId: profile.id,
+        specialtyId,
+        durationMinutes: profile.defaultConsultationMinutes ?? 30,
+      },
+      update: {},
+    }),
+  ]);
 
-  await profile.save();
-  return DoctorProfile.findById(profile.id)
-    .populate('specialtyIds', 'name description')
-    .populate('facilityIds', 'name');
+  return loadMappedProfile(profile.id);
 }
 
 export async function createSpecialtyAndAddToDoctorProfile(
@@ -57,16 +64,16 @@ export async function createSpecialtyAndAddToDoctorProfile(
     throw new Error('El nombre de la especialidad es demasiado largo');
   }
 
-  let specialty = await Specialty.findOne({
-    name: new RegExp(`^${escapeRegex(name)}$`, 'i'),
+  let specialty = await prisma.specialty.findFirst({
+    where: { name: { equals: name, mode: 'insensitive' } },
   });
 
   if (!specialty) {
     try {
-      specialty = await Specialty.create({ name });
+      specialty = await prisma.specialty.create({ data: { name } });
     } catch {
-      specialty = await Specialty.findOne({
-        name: new RegExp(`^${escapeRegex(name)}$`, 'i'),
+      specialty = await prisma.specialty.findFirst({
+        where: { name: { equals: name, mode: 'insensitive' } },
       });
       if (!specialty) throw new Error('No se pudo registrar la especialidad');
     }
@@ -80,25 +87,33 @@ export async function removeSpecialtyFromDoctorProfile(
   specialtyId: string,
 ) {
   const profile = await getDoctorProfileOrThrow(doctorUserId);
-  const sid = new Types.ObjectId(specialtyId);
 
-  if (!profile.specialtyIds.some((id) => id.equals(sid))) {
-    throw new Error('Esta especialidad no está en tu perfil');
-  }
-
-  if (profile.specialtyIds.length <= 1) {
+  const count = await prisma.doctorProfileSpecialty.count({
+    where: { doctorProfileId: profile.id },
+  });
+  if (count <= 1) {
     throw new Error('Debes mantener al menos una especialidad en tu perfil');
   }
 
-  profile.specialtyIds = profile.specialtyIds.filter((id) => !id.equals(sid));
-  profile.specialtyConsultationDurations = profile.specialtyConsultationDurations.filter(
-    (entry) => !entry.specialtyId.equals(sid),
-  );
+  const link = await prisma.doctorProfileSpecialty.findUnique({
+    where: {
+      doctorProfileId_specialtyId: { doctorProfileId: profile.id, specialtyId },
+    },
+  });
+  if (!link) throw new Error('Esta especialidad no está en tu perfil');
 
-  await profile.save();
-  return DoctorProfile.findById(profile.id)
-    .populate('specialtyIds', 'name description')
-    .populate('facilityIds', 'name');
+  await prisma.$transaction([
+    prisma.doctorProfileSpecialty.delete({
+      where: {
+        doctorProfileId_specialtyId: { doctorProfileId: profile.id, specialtyId },
+      },
+    }),
+    prisma.doctorSpecialtyDuration.deleteMany({
+      where: { doctorProfileId: profile.id, specialtyId },
+    }),
+  ]);
+
+  return loadMappedProfile(profile.id);
 }
 
 export async function updateSpecialtyConsultationDuration(
@@ -111,28 +126,27 @@ export async function updateSpecialtyConsultationDuration(
   }
 
   const profile = await getDoctorProfileOrThrow(doctorUserId);
-  const sid = new Types.ObjectId(specialtyId);
 
-  if (!profile.specialtyIds.some((id) => id.equals(sid))) {
-    throw new Error('Esta especialidad no está en tu perfil');
-  }
+  const link = await prisma.doctorProfileSpecialty.findUnique({
+    where: {
+      doctorProfileId_specialtyId: { doctorProfileId: profile.id, specialtyId },
+    },
+  });
+  if (!link) throw new Error('Esta especialidad no está en tu perfil');
 
-  const entry = profile.specialtyConsultationDurations.find((e) =>
-    e.specialtyId.equals(sid),
-  );
-  if (entry) {
-    entry.durationMinutes = Math.round(durationMinutes);
-  } else {
-    profile.specialtyConsultationDurations.push({
-      specialtyId: sid,
+  await prisma.doctorSpecialtyDuration.upsert({
+    where: {
+      doctorProfileId_specialtyId: { doctorProfileId: profile.id, specialtyId },
+    },
+    create: {
+      doctorProfileId: profile.id,
+      specialtyId,
       durationMinutes: Math.round(durationMinutes),
-    });
-  }
+    },
+    update: { durationMinutes: Math.round(durationMinutes) },
+  });
 
-  await profile.save();
-  return DoctorProfile.findById(profile.id)
-    .populate('specialtyIds', 'name description')
-    .populate('facilityIds', 'name');
+  return loadMappedProfile(profile.id);
 }
 
 export async function updateDoctorProfileDetails(
@@ -145,23 +159,28 @@ export async function updateDoctorProfileDetails(
     defaultConsultationMinutes?: number;
   },
 ) {
-  const user = await User.findById(doctorUserId);
+  const user = await prisma.user.findUnique({ where: { id: doctorUserId } });
   if (!user) throw new Error('Usuario no encontrado');
 
+  const userData: { name?: string; profilePic?: string | null } = {};
   if (input.name !== undefined) {
     const name = String(input.name).trim();
     if (name.length < 2) throw new Error('El nombre debe tener al menos 2 caracteres');
-    user.name = name;
-    await user.save();
+    userData.name = name;
   }
-
   if (input.profilePic !== undefined) {
-    user.profilePic = String(input.profilePic).trim() || undefined;
-    await user.save();
+    userData.profilePic = String(input.profilePic).trim() || null;
+  }
+  if (Object.keys(userData).length > 0) {
+    await prisma.user.update({ where: { id: doctorUserId }, data: userData });
   }
 
   const profile = await getDoctorProfileOrThrow(doctorUserId);
-  const profileUpdate: Record<string, unknown> = {};
+  const profileUpdate: {
+    bio?: string;
+    licenseNumber?: string;
+    defaultConsultationMinutes?: number;
+  } = {};
 
   if (input.bio !== undefined) {
     profileUpdate.bio = String(input.bio).trim().slice(0, 600);
@@ -178,14 +197,13 @@ export async function updateDoctorProfileDetails(
   }
 
   if (Object.keys(profileUpdate).length > 0) {
-    Object.assign(profile, profileUpdate);
-    await profile.save();
+    await prisma.doctorProfile.update({ where: { id: profile.id }, data: profileUpdate });
   }
 
-  const populated = await DoctorProfile.findById(profile.id)
-    .populate('specialtyIds', 'name description')
-    .populate('facilityIds', 'name');
-
-  const userFresh = await User.findById(doctorUserId).select('-password');
-  return { user: userFresh, profile: populated };
+  const populated = await loadMappedProfile(profile.id);
+  const userFresh = await prisma.user.findUnique({ where: { id: doctorUserId } });
+  return {
+    user: userFresh ? toApiDoc(omitPassword(userFresh)) : null,
+    profile: populated,
+  };
 }

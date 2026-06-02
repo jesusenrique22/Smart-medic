@@ -20,6 +20,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   OverviewStats? _overview;
   List<FacilityStatItem> _facilityStats = [];
   List<PharmacyStatItem> _pharmacyStats = [];
+  List<LaboratoryStatItem> _laboratoryStats = [];
   bool _loading = true;
   String? _error;
 
@@ -39,12 +40,14 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         _api.getOverview(),
         _api.getFacilityStats(),
         _api.getPharmacyStats(),
+        _api.getLaboratoryStats(),
       ]);
       if (!mounted) return;
       setState(() {
         _overview = results[0] as OverviewStats;
         _facilityStats = results[1] as List<FacilityStatItem>;
         _pharmacyStats = results[2] as List<PharmacyStatItem>;
+        _laboratoryStats = results[3] as List<LaboratoryStatItem>;
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -75,6 +78,282 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   Future<void> _togglePharmacyService(PharmacyStatItem item) async {
     try {
       await _api.setPharmacyService(item.id, !item.serviceEnabled);
+      _load();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _toggleLaboratoryService(LaboratoryStatItem item) async {
+    try {
+      await _api.setLaboratoryService(item.id, !item.serviceEnabled);
+      _load();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _showCreateLaboratory({void Function(String id, String name)? onCreated}) async {
+    final nameCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    bool saving = false;
+
+    await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => AlertDialog(
+          title: const Text('Registrar laboratorio'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'El laboratorio quedará disponible para asignar técnicos.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre del laboratorio *',
+                    hintText: 'Ej: BioLab Central',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: addressCtrl,
+                  decoration: const InputDecoration(labelText: 'Dirección *'),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneCtrl,
+                  decoration: const InputDecoration(labelText: 'Teléfono'),
+                  keyboardType: TextInputType.phone,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (nameCtrl.text.trim().isEmpty ||
+                          addressCtrl.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Nombre y dirección son obligatorios'),
+                          ),
+                        );
+                        return;
+                      }
+                      setModal(() => saving = true);
+                      try {
+                        final lab = await _api.createLaboratory(
+                          name: nameCtrl.text,
+                          address: addressCtrl.text,
+                          phone: phoneCtrl.text,
+                        );
+                        final id = lab['_id']?.toString() ?? lab['id']?.toString() ?? '';
+                        final labName = lab['name'] as String? ?? nameCtrl.text.trim();
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx, true);
+                        onCreated?.call(id, labName);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Laboratorio "$labName" registrado'),
+                              backgroundColor: AppColors.secondary,
+                            ),
+                          );
+                          _load();
+                        }
+                      } on ApiException catch (e) {
+                        setModal(() => saving = false);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+                          );
+                        }
+                      } catch (_) {
+                        setModal(() => saving = false);
+                      }
+                    },
+              child: saving
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Registrar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    nameCtrl.dispose();
+    addressCtrl.dispose();
+    phoneCtrl.dispose();
+  }
+
+  Future<void> _showCreateLabTech() async {
+    var laboratories = await _api.listLaboratories();
+    if (!mounted) return;
+
+    final nameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+
+    List<(String id, String name)> options = laboratories
+        .map(
+          (l) => (
+            l['_id']?.toString() ?? l['id']?.toString() ?? '',
+            l['name'] as String? ?? '',
+          ),
+        )
+        .where((o) => o.$1.isNotEmpty)
+        .toList();
+
+    String? selectedId = options.isNotEmpty ? options.first.$1 : null;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => AlertDialog(
+          title: const Text('Crear perfil de laboratorio'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Cuenta de técnico para procesar exámenes (sangre, orina, heces, etc.).',
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Nombre completo'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: emailCtrl,
+                  decoration: const InputDecoration(labelText: 'Correo'),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: phoneCtrl,
+                  decoration: const InputDecoration(labelText: 'Teléfono'),
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 16),
+                if (options.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      'No hay laboratorios registrados. Crea uno primero.',
+                      style: TextStyle(color: Colors.orange, fontSize: 13),
+                    ),
+                  )
+                else
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedId,
+                    decoration: const InputDecoration(labelText: 'Laboratorio'),
+                    items: options
+                        .map(
+                          (o) => DropdownMenuItem(value: o.$1, child: Text(o.$2)),
+                        )
+                        .toList(),
+                    onChanged: (v) => setModal(() => selectedId = v),
+                  ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await _showCreateLaboratory(
+                      onCreated: (id, name) {
+                        setModal(() {
+                          options = [...options, (id, name)];
+                          selectedId = id;
+                        });
+                      },
+                    );
+                  },
+                  icon: const Icon(Icons.biotech_rounded, size: 20),
+                  label: const Text('Registrar nuevo laboratorio'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: selectedId == null ? null : () => Navigator.pop(ctx, true),
+              child: const Text('Crear'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final laboratoryId = selectedId;
+    final techName = nameCtrl.text;
+    final techEmail = emailCtrl.text;
+    final techPhone = phoneCtrl.text;
+
+    nameCtrl.dispose();
+    emailCtrl.dispose();
+    phoneCtrl.dispose();
+
+    if (ok != true || laboratoryId == null) return;
+
+    try {
+      final result = await _api.createLabTech(
+        name: techName,
+        email: techEmail,
+        phone: techPhone,
+        laboratoryId: laboratoryId,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Cuenta creada'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${result.name} — ${result.email}'),
+              const SizedBox(height: 8),
+              const Text('Rol: Técnico de laboratorio'),
+              const SizedBox(height: 8),
+              SelectableText('Contraseña: ${result.temporaryPassword}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: result.temporaryPassword));
+                Navigator.pop(ctx);
+              },
+              child: const Text('Copiar contraseña'),
+            ),
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+          ],
+        ),
+      );
       _load();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -538,7 +817,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Estadísticas globales, control de servicios por clínica/farmacia y creación de otros administradores.',
+                        'Estadísticas globales, control de servicios y creación de administradores, farmacias y laboratorios.',
                         style: TextStyle(color: Colors.grey, fontSize: 13),
                       ),
                       const SizedBox(height: 20),
@@ -564,12 +843,35 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                         ],
                       ),
                       const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _showCreatePharmacyAdmin,
+                              icon: const Icon(Icons.local_pharmacy),
+                              label: const Text('Admin farmacia'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showCreateLaboratory(),
+                              icon: const Icon(Icons.biotech_rounded),
+                              label: const Text('Nuevo lab.'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: _showCreatePharmacyAdmin,
-                          icon: const Icon(Icons.local_pharmacy),
-                          label: const Text('Admin de farmacia'),
+                          onPressed: _showCreateLabTech,
+                          icon: const Icon(Icons.science_rounded),
+                          label: const Text('Perfil de laboratorio (técnico)'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF7C3AED),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 32),
@@ -586,6 +888,13 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
                       ),
                       const SizedBox(height: 12),
                       ..._pharmacyStats.map(_buildPharmacyCard),
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Laboratorios — personal y exámenes',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 12),
+                      ..._laboratoryStats.map(_buildLaboratoryCard),
                     ],
                   ),
                 ),
@@ -603,6 +912,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         _statChip('Pedidos farmacia', '${s.pharmacyOrders}', Colors.orange),
         _statChip('Adm. clínicas', '${s.clinicAdmins}', Colors.teal),
         _statChip('Adm. farmacias', '${s.pharmacyAdmins}', Colors.purple),
+        _statChip('Técnicos lab.', '${s.labTechs}', const Color(0xFF7C3AED)),
+        _statChip('Laboratorios', '${s.laboratories}', Colors.indigo),
       ],
     );
   }
@@ -651,6 +962,24 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         trailing: Switch(
           value: item.serviceEnabled,
           onChanged: (_) => _togglePharmacyService(item),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLaboratoryCard(LaboratoryStatItem item) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xFF7C3AED).withValues(alpha: 0.12),
+          child: const Icon(Icons.biotech_rounded, color: Color(0xFF7C3AED)),
+        ),
+        title: Text(item.name),
+        subtitle: Text('${item.staffCount} técnico(s) registrado(s)'),
+        trailing: Switch(
+          value: item.serviceEnabled,
+          onChanged: (_) => _toggleLaboratoryService(item),
         ),
       ),
     );

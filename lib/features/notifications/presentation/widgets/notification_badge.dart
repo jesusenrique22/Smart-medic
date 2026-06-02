@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/services/app_realtime.dart';
 import '../../../../core/network/api_client.dart' show ApiException;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/profile_ui.dart';
@@ -25,6 +26,7 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   int _unread = 0;
   OverlayEntry? _overlay;
   Timer? _pollTimer;
+  StreamSubscription<Map<String, dynamic>>? _socketSub;
   Duration _pollInterval = const Duration(seconds: 45);
 
   @override
@@ -32,6 +34,9 @@ class _NotificationBadgeState extends State<NotificationBadge> {
     super.initState();
     _refreshCount();
     _schedulePoll();
+    _socketSub = AppRealtime.chatSocket.onNotificationNew.listen((_) {
+      _refreshCount();
+    });
   }
 
   void _schedulePoll() {
@@ -45,6 +50,7 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _socketSub?.cancel();
     _removeOverlay();
     super.dispose();
   }

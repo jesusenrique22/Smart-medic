@@ -1,8 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { Appointment } from '../models/Appointment';
-import { DoctorProfile } from '../models/DoctorProfile';
-import { MedicalHistory } from '../models/MedicalHistory';
+import { prisma } from '../lib/prisma';
 import { AppointmentStatus, AppointmentType, UserRole } from '../types/enums';
 import {
   assertNoConflict,
@@ -13,9 +11,19 @@ import { getDoctorConsultationDuration } from '../services/doctorDuration.servic
 import { assertDoctorFacility } from '../utils/doctorFacilities';
 import { isSuperAdminRole } from '../utils/roleHelpers';
 import { recalculateDoctorRating } from '../services/doctorRating.service';
+import { appointmentInclude, mapAppointment } from '../utils/prismaMappers';
+import type { Appointment } from '@prisma/client';
+
+async function loadAppointment(id: string) {
+  const row = await prisma.appointment.findUnique({
+    where: { id },
+    include: appointmentInclude,
+  });
+  return row ? mapAppointment(row) : null;
+}
 
 export async function recordCompletedVisit(
-  appointment: InstanceType<typeof Appointment>,
+  appointment: Appointment,
   doctorId: string,
   clinicalNotes?: string,
 ): Promise<void> {
@@ -23,25 +31,29 @@ export async function recordCompletedVisit(
     appointment.reason?.trim() ||
     `Consulta ${appointment.type === AppointmentType.ONLINE ? 'telemedicina' : 'presencial'}`;
 
-  await MedicalHistory.findOneAndUpdate(
-    { patientId: appointment.patientId },
-    {
-      $push: {
-        entries: {
-          date: appointment.dateTime,
-          doctorId,
-          title,
-          description:
-            clinicalNotes?.trim() ||
-            appointment.notes?.trim() ||
-            'Consulta completada.',
-          diagnosis: appointment.reason,
-          treatment: clinicalNotes || appointment.notes,
-        },
-      },
+  let history = await prisma.medicalHistory.findUnique({
+    where: { patientId: appointment.patientId },
+  });
+  if (!history) {
+    history = await prisma.medicalHistory.create({
+      data: { patientId: appointment.patientId },
+    });
+  }
+
+  await prisma.medicalHistoryEntry.create({
+    data: {
+      medicalHistoryId: history.id,
+      date: appointment.dateTime,
+      doctorId,
+      title,
+      description:
+        clinicalNotes?.trim() ||
+        appointment.notes?.trim() ||
+        'Consulta completada.',
+      diagnosis: appointment.reason,
+      treatment: clinicalNotes || appointment.notes,
     },
-    { upsert: true, new: true },
-  );
+  });
 }
 
 export const createAppointment = async (req: AuthRequest, res: Response) => {
@@ -98,7 +110,7 @@ export const createAppointment = async (req: AuthRequest, res: Response) => {
     req.user!.role === UserRole.PATIENT ? req.user!.id : req.body.patientId;
   if (!patientId) return res.status(400).json({ error: 'patientId requerido' });
 
-  const doctorProfile = await DoctorProfile.findOne({ userId: doctorId });
+  const doctorProfile = await prisma.doctorProfile.findUnique({ where: { userId: doctorId } });
   const price =
     type === AppointmentType.ONLINE
       ? doctorProfile?.consultationPriceOnline ?? 25
@@ -106,69 +118,62 @@ export const createAppointment = async (req: AuthRequest, res: Response) => {
 
   const endTime = computeEndTime(start, duration);
 
-  const appointment = await Appointment.create({
-    patientId,
-    doctorId,
-    facilityId: type === AppointmentType.PRESENTIAL ? facilityId : undefined,
-    specialtyId,
-    dateTime: start,
-    endTime,
-    durationMinutes: duration,
-    type,
-    reason,
-    price,
-    status: AppointmentStatus.CONFIRMED,
+  const appointment = await prisma.appointment.create({
+    data: {
+      patientId,
+      doctorId,
+      facilityId: type === AppointmentType.PRESENTIAL ? facilityId : undefined,
+      specialtyId,
+      dateTime: start,
+      endTime,
+      durationMinutes: duration,
+      type,
+      reason,
+      price,
+      status: AppointmentStatus.CONFIRMED,
+    },
   });
 
-  const populated = await Appointment.findById(appointment.id)
-    .populate('doctorId', 'name email profilePic phone')
-    .populate('patientId', 'name email profilePic phone')
-    .populate('facilityId', 'name address type')
-    .populate('specialtyId', 'name');
-
+  const populated = await loadAppointment(appointment.id);
   res.status(201).json(populated);
 };
 
 export const getAppointmentById = async (req: AuthRequest, res: Response) => {
-  const appointment = await Appointment.findById(req.params.id)
-    .populate('doctorId', 'name email profilePic phone')
-    .populate('patientId', 'name email profilePic phone')
-    .populate('facilityId')
-    .populate('specialtyId', 'name');
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: req.params.id },
+    include: appointmentInclude,
+  });
 
   if (!appointment) return res.status(404).json({ error: 'Cita no encontrada' });
 
   const userId = req.user!.id;
   const ok =
-    appointment.patientId.toString() === userId ||
-    appointment.doctorId.toString() === userId ||
+    appointment.patientId === userId ||
+    appointment.doctorId === userId ||
     isSuperAdminRole(req.user!.role);
 
   if (!ok) return res.status(403).json({ error: 'Acceso denegado' });
-  res.json(appointment);
+  res.json(mapAppointment(appointment));
 };
 
 export const cancelAppointment = async (req: AuthRequest, res: Response) => {
-  const appointment = await Appointment.findById(req.params.id);
+  const appointment = await prisma.appointment.findUnique({ where: { id: req.params.id } });
   if (!appointment) return res.status(404).json({ error: 'Cita no encontrada' });
 
   const userId = req.user!.id;
   const ok =
-    appointment.patientId.toString() === userId ||
-    appointment.doctorId.toString() === userId ||
+    appointment.patientId === userId ||
+    appointment.doctorId === userId ||
     isSuperAdminRole(req.user!.role);
 
   if (!ok) return res.status(403).json({ error: 'Acceso denegado' });
 
-  appointment.status = AppointmentStatus.CANCELLED;
-  await appointment.save();
+  await prisma.appointment.update({
+    where: { id: appointment.id },
+    data: { status: AppointmentStatus.CANCELLED },
+  });
 
-  const populated = await Appointment.findById(appointment.id)
-    .populate('doctorId', 'name email profilePic')
-    .populate('patientId', 'name email profilePic')
-    .populate('facilityId', 'name address')
-    .populate('specialtyId', 'name');
-
+  const populated = await loadAppointment(appointment.id);
   res.json(populated);
 };
 
@@ -181,10 +186,10 @@ export const rateAppointment = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'La calificación debe ser entre 1 y 5 estrellas' });
   }
 
-  const appointment = await Appointment.findById(req.params.id);
+  const appointment = await prisma.appointment.findUnique({ where: { id: req.params.id } });
   if (!appointment) return res.status(404).json({ error: 'Cita no encontrada' });
 
-  if (appointment.patientId.toString() !== req.user!.id) {
+  if (appointment.patientId !== req.user!.id) {
     return res.status(403).json({ error: 'Solo el paciente puede calificar esta cita' });
   }
 
@@ -198,18 +203,17 @@ export const rateAppointment = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Ya calificaste esta consulta' });
   }
 
-  appointment.patientRating = Math.round(stars);
-  appointment.patientReview = comment || undefined;
-  appointment.ratedAt = new Date();
-  await appointment.save();
+  await prisma.appointment.update({
+    where: { id: appointment.id },
+    data: {
+      patientRating: Math.round(stars),
+      patientReview: comment || null,
+      ratedAt: new Date(),
+    },
+  });
 
-  await recalculateDoctorRating(appointment.doctorId.toString());
+  await recalculateDoctorRating(appointment.doctorId);
 
-  const populated = await Appointment.findById(appointment.id)
-    .populate('doctorId', 'name email profilePic phone')
-    .populate('patientId', 'name email profilePic phone')
-    .populate('facilityId', 'name address type')
-    .populate('specialtyId', 'name');
-
+  const populated = await loadAppointment(appointment.id);
   res.json(populated);
 };

@@ -1,11 +1,13 @@
-import { Types } from 'mongoose';
-import { Appointment } from '../models/Appointment';
-import { Notification } from '../models/Notification';
+import { prisma } from '../lib/prisma';
 import { AppointmentStatus, UserRole } from '../types/enums';
-import { User } from '../models/User';
 import { formatApptWhen } from '../utils/appTimezone';
 
-function reminderCopy(msUntil: number, otherName: string, when: string, isDoctor: boolean): {
+function reminderCopy(
+  msUntil: number,
+  otherName: string,
+  when: string,
+  isDoctor: boolean,
+): {
   title: string;
   message: string;
   type: 'INFO' | 'WARNING' | 'ALERT';
@@ -45,31 +47,36 @@ function reminderCopy(msUntil: number, otherName: string, when: string, isDoctor
   };
 }
 
-export async function syncAppointmentReminders(
-  userId: string,
-  role: UserRole,
-): Promise<void> {
+export async function syncAppointmentReminders(userId: string, role: UserRole): Promise<void> {
   const now = new Date();
   const horizon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-  const userOid = new Types.ObjectId(userId);
 
-  const filter: Record<string, unknown> = {
-    status: { $nin: [AppointmentStatus.CANCELLED, AppointmentStatus.COMPLETED] },
-    dateTime: { $gt: now, $lte: horizon },
+  const filter: {
+    status: { notIn: string[] };
+    dateTime: { gt: Date; lte: Date };
+    patientId?: string;
+    doctorId?: string;
+  } = {
+    status: { notIn: [AppointmentStatus.CANCELLED, AppointmentStatus.COMPLETED] },
+    dateTime: { gt: now, lte: horizon },
   };
 
   if (role === UserRole.PATIENT) {
-    filter.patientId = userOid;
+    filter.patientId = userId;
   } else if (role === UserRole.DOCTOR) {
-    filter.doctorId = userOid;
+    filter.doctorId = userId;
   } else {
     return;
   }
 
-  const appointments = await Appointment.find(filter)
-    .populate('doctorId', 'name')
-    .populate('patientId', 'name')
-    .sort({ dateTime: 1 });
+  const appointments = await prisma.appointment.findMany({
+    where: filter,
+    include: {
+      doctor: { select: { name: true } },
+      patient: { select: { name: true } },
+    },
+    orderBy: { dateTime: 'asc' },
+  });
 
   const activeIds = new Set<string>();
 
@@ -79,36 +86,44 @@ export async function syncAppointmentReminders(
     const when = formatApptWhen(appt.dateTime);
     const msUntil = appt.dateTime.getTime() - now.getTime();
     const isDoctor = role === UserRole.DOCTOR;
-    const doctor = appt.doctorId as unknown as { name?: string };
-    const patient = appt.patientId as unknown as { name?: string };
-    const otherName = isDoctor
-      ? patient?.name ?? 'paciente'
-      : doctor?.name ?? 'tu médico';
+    const otherName = isDoctor ? (appt.patient?.name ?? 'paciente') : (appt.doctor?.name ?? 'tu médico');
     const { title, message, type } = reminderCopy(msUntil, otherName, when, isDoctor);
 
-    await Notification.findOneAndUpdate(
-      {
-        userId: userOid,
+    const existing = await prisma.notification.findFirst({
+      where: {
+        userId,
         category: 'APPOINTMENT_REMINDER',
         relatedId: apptId,
       },
-      {
-        $set: {
+    });
+
+    if (existing) {
+      await prisma.notification.update({
+        where: { id: existing.id },
+        data: { title, message, type, relatedPath: '/appointments' },
+      });
+    } else {
+      await prisma.notification.create({
+        data: {
+          userId,
+          category: 'APPOINTMENT_REMINDER',
+          relatedId: apptId,
           title,
           message,
           type,
           relatedPath: '/appointments',
+          isRead: false,
         },
-        $setOnInsert: { isRead: false },
-      },
-      { upsert: true, new: true },
-    );
+      });
+    }
   }
 
-  await Notification.deleteMany({
-    userId: userOid,
-    category: 'APPOINTMENT_REMINDER',
-    relatedId: { $nin: [...activeIds] },
+  await prisma.notification.deleteMany({
+    where: {
+      userId,
+      category: 'APPOINTMENT_REMINDER',
+      ...(activeIds.size > 0 ? { relatedId: { notIn: [...activeIds] } } : {}),
+    },
   });
 }
 
@@ -122,19 +137,21 @@ export async function createChatNotification(params: {
   const preview =
     params.text.length > 120 ? `${params.text.slice(0, 117)}...` : params.text;
 
-  await Notification.create({
-    userId: params.recipientId,
-    title: `Mensaje de ${params.senderName}`,
-    message: preview,
-    type: 'INFO',
-    category: 'CHAT_MESSAGE',
-    relatedPath: '/messages',
-    relatedId: params.conversationId,
-    isRead: false,
+  await prisma.notification.create({
+    data: {
+      userId: params.recipientId,
+      title: `Mensaje de ${params.senderName}`,
+      message: preview,
+      type: 'INFO',
+      category: 'CHAT_MESSAGE',
+      relatedPath: '/messages',
+      relatedId: params.conversationId,
+      isRead: false,
+    },
   });
 }
 
 export async function getSenderName(userId: string): Promise<string> {
-  const user = await User.findById(userId).select('name');
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
   return user?.name ?? 'Usuario';
 }

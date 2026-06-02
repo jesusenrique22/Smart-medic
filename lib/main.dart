@@ -8,6 +8,7 @@ import 'features/patient_profile/data/patient_profile_repository.dart';
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_navigation.dart';
 import 'core/navigation/app_routes.dart';
+import 'core/config/api_config.dart';
 import 'core/services/app_realtime.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
@@ -34,6 +35,14 @@ Future<void> main() async {
     await PatientProfileRepository.refreshFromApi();
   }
   AppRealtime.bindNavigator(appNavigatorKey);
+  if (kIsWeb) {
+    // Visible en release (DevTools → Console) al depurar túneles.
+    debugPrint('[ApiConfig] web origin=${ApiConfig.webOriginLabel}');
+    debugPrint('[ApiConfig] API=${ApiConfig.baseUrl} SOCKET=${ApiConfig.socketUrl}');
+  }
+  if (kDebugMode) {
+    ApiConfig.logResolvedEndpoints();
+  }
   runApp(VitaOSApp(hasSession: hasSession));
 }
 
@@ -50,7 +59,6 @@ class VitaOSApp extends StatelessWidget {
 
     return MaterialApp(
       navigatorKey: appNavigatorKey,
-      navigatorObservers: [RealtimeNavigatorObserver()],
       title: 'VITA OS',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,

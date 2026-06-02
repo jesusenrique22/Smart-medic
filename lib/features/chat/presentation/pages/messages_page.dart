@@ -2,9 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../../../core/auth/app_session.dart';
+import '../../../../core/config/api_config.dart';
+import '../../../../core/debug/dev_tools_config.dart';
+import '../../../../core/network/gateway_health.dart';
 import '../../../../core/utils/date_format.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/active_call_service.dart';
 import '../../../../core/services/app_realtime.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
@@ -43,6 +47,8 @@ class _MessagesPageState extends State<MessagesPage>
 
   StreamSubscription<Map<String, dynamic>>? _messageSub;
   StreamSubscription<Map<String, dynamic>>? _conversationSub;
+  StreamSubscription<bool>? _connectionSub;
+  bool _socketConnected = false;
 
   bool get _isDoctor => AppSession.activeRole == Role.doctor;
   bool _openedFromArgs = false;
@@ -54,10 +60,21 @@ class _MessagesPageState extends State<MessagesPage>
       ..addListener(() {
         if (!_tabController.indexIsChanging) setState(() {});
       });
-    AppRealtime.connectIfNeeded();
     _messageSub = AppRealtime.chatSocket.onMessage.listen(_onSocketMessage);
     _conversationSub =
         AppRealtime.chatSocket.onConversationUpdated.listen(_onConversationUpdated);
+    _socketConnected = AppRealtime.chatSocket.isConnected;
+    _connectionSub = AppRealtime.chatSocket.onConnectionChanged.listen((ok) {
+      if (!mounted) return;
+      setState(() => _socketConnected = ok);
+      if (ok && _joinedConversationId != null) {
+        AppRealtime.chatSocket.joinConversation(_joinedConversationId!);
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(AppRealtime.connectIfNeeded());
+    });
     _loadChats();
     _loadClinical();
   }
@@ -89,6 +106,7 @@ class _MessagesPageState extends State<MessagesPage>
     }
     _messageSub?.cancel();
     _conversationSub?.cancel();
+    _connectionSub?.cancel();
     _textController.dispose();
     _scrollController.dispose();
     _tabController.dispose();
@@ -122,7 +140,24 @@ class _MessagesPageState extends State<MessagesPage>
       _loadClinical();
       return;
     }
+    final convId = data['conversationId']?.toString();
+    if (convId != null && _activeChat?.id == convId) {
+      unawaited(_reloadActiveThread());
+    }
     _loadChats();
+  }
+
+  Future<void> _reloadActiveThread() async {
+    final conv = _activeChat;
+    if (conv == null) return;
+    try {
+      final msgs = await _chat.getMessages(conv.id, kind: ChatMessageKind.chat);
+      if (!mounted || _activeChat?.id != conv.id) return;
+      setState(() => _chatMessages = msgs);
+      _scrollToBottom();
+    } catch (_) {
+      // ignore
+    }
   }
 
   Future<void> _loadChats() async {
@@ -205,15 +240,25 @@ class _MessagesPageState extends State<MessagesPage>
       AppRealtime.chatSocket.leaveConversation(_joinedConversationId!);
     }
     _joinedConversationId = c.id;
-    AppRealtime.chatSocket.joinConversation(c.id);
 
     setState(() {
       _activeChat = c;
       _loadingThread = true;
       _chatMessages = [];
     });
+
+    final connectFuture =
+        AppRealtime.ensureConnected(timeout: const Duration(seconds: 4));
+    final msgsFuture = _chat.getMessages(c.id, kind: ChatMessageKind.chat);
+
+    final socketOk = await connectFuture;
+    if (!mounted || _joinedConversationId != c.id) return;
+    if (socketOk) {
+      AppRealtime.chatSocket.joinConversation(c.id);
+    }
+
     try {
-      final msgs = await _chat.getMessages(c.id, kind: ChatMessageKind.chat);
+      final msgs = await msgsFuture;
       if (!mounted) return;
       setState(() {
         _chatMessages = msgs;
@@ -245,7 +290,10 @@ class _MessagesPageState extends State<MessagesPage>
     setState(() => _sending = true);
     try {
       ChatMessageItem? sent;
-      if (AppRealtime.chatSocket.isConnected) {
+      final socketOk = await AppRealtime.ensureConnected(
+        timeout: const Duration(seconds: 3),
+      );
+      if (socketOk) {
         sent = await AppRealtime.chatSocket.sendMessage(
           conversationId: conv.id,
           text: text,
@@ -373,33 +421,77 @@ class _MessagesPageState extends State<MessagesPage>
     }
   }
 
-  void _startCall({required bool video}) {
+  Future<void> _startCall({required bool video}) async {
     final conv = _activeChat;
     if (conv == null) return;
 
-    AppRealtime.connectIfNeeded();
-    if (!AppRealtime.chatSocket.isConnected) {
+    if (ActiveCallService.instance.hasActiveCall) {
+      final active = ActiveCallService.instance;
+      if (active.conversationId == conv.id) {
+        active.expandToFullScreen();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ya estás en llamada con ${active.peerName}. '
+              'Cuelga antes de llamar a otro contacto.',
+            ),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Volver',
+              onPressed: active.expandToFullScreen,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final gatewayUp = await isGatewayReachable();
+    if (!mounted) return;
+    if (!gatewayUp) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'No hay conexión en tiempo real. Verifica que el backend esté en marcha (puerto 3000).',
+            'El gateway WebSocket no está activo. En una terminal ejecuta:\n'
+            'cd realtime-gateway && pnpm run dev',
           ),
           backgroundColor: Colors.red,
-          duration: Duration(seconds: 4),
+          duration: Duration(seconds: 6),
         ),
       );
       return;
     }
 
-    Navigator.pushNamed(
-      context,
-      AppRoutes.videoCall,
-      arguments: {
-        'conversationId': conv.id,
-        'peerName': _peerName(conv),
-        'callType': video ? 'video' : 'audio',
-        'isOutgoing': true,
-      },
+    final connected = await AppRealtime.ensureConnected(
+      timeout: const Duration(seconds: 12),
+    );
+    if (!mounted) return;
+    if (!connected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo conectar al gateway (${ApiConfig.socketUrl}). '
+            'Cierra sesión, vuelve a entrar y comprueba JWT_SECRET igual en backend y realtime-gateway.',
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      return;
+    }
+
+    if (_joinedConversationId != null) {
+      AppRealtime.chatSocket.joinConversation(_joinedConversationId!);
+      AppRealtime.chatSocket.joinCallRoom(_joinedConversationId!);
+    }
+
+    if (!mounted) return;
+    AppRealtime.navigateToVideoCall(
+      conversationId: conv.id,
+      peerName: _peerName(conv),
+      callType: video ? 'video' : 'audio',
+      isOutgoing: true,
     );
   }
 
@@ -430,7 +522,27 @@ class _MessagesPageState extends State<MessagesPage>
               )
             : null,
         actions: [
+          if (DevToolsConfig.enabled)
+            IconButton(
+              tooltip: 'Debug gateway',
+              icon: const Icon(Icons.bug_report_outlined),
+              onPressed: () =>
+                  Navigator.pushNamed(context, AppRoutes.gatewayDebug),
+            ),
           if (inChatThread) ...[
+            Tooltip(
+              message: _socketConnected
+                  ? 'Tiempo real activo'
+                  : 'Sin conexión al gateway (${ApiConfig.socketUrl})',
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Icon(
+                  _socketConnected ? Icons.circle : Icons.circle_outlined,
+                  size: 12,
+                  color: _socketConnected ? Colors.greenAccent : Colors.orange,
+                ),
+              ),
+            ),
             IconButton(
               tooltip: 'Llamada de voz',
               icon: const Icon(Icons.phone_rounded),
@@ -541,7 +653,7 @@ class _MessagesPageState extends State<MessagesPage>
 
     return ListView.separated(
       itemCount: _conversations.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
       itemBuilder: (_, i) {
         final c = _conversations[i];
         final selected = _activeChat?.id == c.id;
@@ -811,7 +923,7 @@ class _MessagesPageState extends State<MessagesPage>
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _clinicalItems.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (_, i) {
         final item = _clinicalItems[i];
         return Card(

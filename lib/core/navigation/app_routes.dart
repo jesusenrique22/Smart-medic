@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../core/debug/gateway_debug_page.dart';
 import '../../features/pages.dart';
 import '../../features/auth/domain/models/role.dart';
 
@@ -22,6 +24,7 @@ class AppRoutes {
   static const String patientProfile = '/patient_profile';
   static const String clinicalHistory = '/clinical_history';
   static const String messages = '/messages';
+  static const String gatewayDebug = '/debug/gateway';
   static const String dashboard = '/dashboard';
   static const String schedule = '/schedule';
   static const String appointments = '/appointments';
@@ -49,6 +52,8 @@ class AppRoutes {
   static const String paramedicDashboard = '/paramedic_dashboard';
   static const String labMarketplace = '/lab_marketplace';
   static const String labTechnician = '/lab_technician';
+  static const String labExamsCatalog = '/lab_exams_catalog';
+  static const String labRegisterExam = '/lab_register_exam';
   static const String labResults = '/lab_results';
   static const String clinicReception = '/clinic_reception';
   static const String erDashboard = '/er_dashboard';
@@ -190,8 +195,14 @@ class AppRoutes {
     ),
     AppRouteDestination(
       path: labTechnician,
-      label: 'Laboratorio',
-      icon: Icons.biotech_rounded,
+      label: 'Inicio',
+      icon: Icons.home_rounded,
+      roles: {Role.labTech},
+    ),
+    AppRouteDestination(
+      path: labExamsCatalog,
+      label: 'Exámenes',
+      icon: Icons.science_rounded,
       roles: {Role.labTech},
     ),
     AppRouteDestination(
@@ -222,12 +233,6 @@ class AppRoutes {
       path: clinicAdminDashboard,
       label: 'Inicio',
       icon: Icons.local_hospital_rounded,
-      roles: {Role.clinicAdmin},
-    ),
-    AppRouteDestination(
-      path: clinicAssignDoctor,
-      label: 'Médicos',
-      icon: Icons.groups_rounded,
       roles: {Role.clinicAdmin},
     ),
     AppRouteDestination(
@@ -359,7 +364,6 @@ class AppRoutes {
     if (role == Role.clinicAdmin) {
       return _destinationsForPaths([
         clinicAdminDashboard,
-        clinicAssignDoctor,
         adminCreateDoctor,
         clinicAdminPassword,
       ]);
@@ -390,6 +394,9 @@ class AppRoutes {
         clinicBilling,
       ]);
     }
+    if (role == Role.labTech) {
+      return _destinationsForPaths([labTechnician, labExamsCatalog]);
+    }
 
     final roleDestinations = destinationsForRole(role);
     return roleDestinations.length >= 2
@@ -407,6 +414,8 @@ class AppRoutes {
     doctorProfile: {Role.doctor},
     clinicalHistory: {Role.patient},
     messages: {Role.patient, Role.doctor},
+    videoCall: {Role.patient, Role.doctor},
+    labRegisterExam: {Role.labTech},
   };
 
   static bool isAllowedForRole(String? route, Role role) {
@@ -430,7 +439,7 @@ class AppRoutes {
       case tracking:
         return ambulanceCheckout;
       case videoCall:
-        return appointments;
+        return videoCall;
       case insurance:
         return insuranceWallet;
       case '/':
@@ -455,11 +464,15 @@ class AppRoutes {
       case adminCreateDoctor:
         return 'Registrar médico';
       case clinicAssignDoctor:
-        return 'Invitar médico existente';
+        return 'Gestionar médicos';
       case clinicAdminPassword:
         return 'Cambiar contraseña';
       case pharmacyAdminManage:
         return 'Gestión de farmacia';
+      case labExamsCatalog:
+        return 'Catálogo de exámenes';
+      case labRegisterExam:
+        return 'Registrar examen';
       default:
         return destinationFor(route)?.label ?? 'VITA OS';
     }
@@ -471,6 +484,7 @@ class AppRoutes {
     patientProfile: (_) => const PatientProfilePage(),
     clinicalHistory: (_) => const ClinicalHistoryFormPage(),
     messages: (_) => const MessagesPage(),
+    gatewayDebug: (_) => const GatewayDebugPage(),
     schedule: (_) => const ScheduleAppointmentPage(),
     appointments: (_) => const MyAppointmentsPage(),
     tracking: (_) => const AmbulanceTracking(),
@@ -505,6 +519,8 @@ class AppRoutes {
     paramedicDashboard: (_) => const ParamedicTransitScreen(),
     labMarketplace: (_) => const LabMarketplaceScreen(),
     labTechnician: (_) => const LabTechnicianDashboard(),
+    labExamsCatalog: (_) => const LabExamsCatalogPage(),
+    labRegisterExam: (_) => const LabRegisterExamPage(),
     labResults: (_) => const PatientResultsScreen(),
     clinicReception: (_) => const ClinicReceptionScreen(),
     erDashboard: (_) => const ERIncomingDashboard(),

@@ -1,29 +1,27 @@
 import { Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../middleware/auth';
-import { User } from '../models/User';
-import { MedicalFacility } from '../models/MedicalFacility';
-import { DoctorProfile } from '../models/DoctorProfile';
-import { Appointment } from '../models/Appointment';
+import { prisma } from '../lib/prisma';
 import { createDoctorByAdmin } from '../services/adminDoctor.service';
 import {
   listDoctorsForFacility,
   listDoctorsNotInFacility,
   unassignDoctorFromFacility,
 } from '../services/clinicDoctorAssignment.service';
-import {
-  ClinicInvitation,
-  ClinicInvitationStatus,
-} from '../models/ClinicInvitation';
+import { ClinicInvitationStatus } from '../models/ClinicInvitation';
 import { inviteDoctorToFacility } from '../services/clinicInvitation.service';
+import { emitToFacility } from '../socket/realtimeGatewayClient';
 import { sanitizeUser } from '../utils/sanitizeUser';
+import { toApiDoc } from '../utils/apiDoc';
 
 async function getClinicAdminContext(userId: string) {
-  const user = await User.findById(userId);
+  const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.managedFacilityId) {
     return null;
   }
-  const facility = await MedicalFacility.findById(user.managedFacilityId);
+  const facility = await prisma.medicalFacility.findUnique({
+    where: { id: user.managedFacilityId },
+  });
   return { user, facility };
 }
 
@@ -34,7 +32,7 @@ export const getMyContext = async (req: AuthRequest, res: Response) => {
   }
   res.json({
     user: sanitizeUser(ctx.user),
-    facility: ctx.facility,
+    facility: ctx.facility ? toApiDoc(ctx.facility) : null,
   });
 };
 
@@ -46,9 +44,7 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
   const facilityId = ctx.facility.id;
   const doctors = await listDoctorsForFacility(facilityId);
-  const doctorUserIds = doctors
-    .map((d) => d.user?.id)
-    .filter((id): id is string => Boolean(id));
+  const doctorUserIds = doctors.map((d) => d.user?.id).filter((id): id is string => Boolean(id));
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -57,22 +53,25 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
   let appointmentsToday = 0;
   if (doctorUserIds.length) {
-    appointmentsToday = await Appointment.countDocuments({
-      doctorId: { $in: doctorUserIds },
-      dateTime: { $gte: today, $lt: tomorrow },
-      status: { $ne: 'CANCELLED' },
+    appointmentsToday = await prisma.appointment.count({
+      where: {
+        doctorId: { in: doctorUserIds },
+        dateTime: { gte: today, lt: tomorrow },
+        status: { not: 'CANCELLED' },
+      },
     });
   }
 
-  const pendingInvitations = await ClinicInvitation.find({
-    facilityId: ctx.facility.id,
-    status: ClinicInvitationStatus.PENDING,
-  })
-    .populate('doctorId', 'name email phone profilePic')
-    .sort({ createdAt: -1 });
+  const pendingInvitations = await prisma.clinicInvitation.findMany({
+    where: { facilityId: ctx.facility.id, status: ClinicInvitationStatus.PENDING },
+    include: {
+      doctor: { select: { id: true, name: true, email: true, phone: true, profilePic: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
   res.json({
-    facility: ctx.facility,
+    facility: toApiDoc(ctx.facility),
     stats: {
       doctorsCount: doctors.length,
       appointmentsToday,
@@ -81,7 +80,7 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     doctors,
     pendingInvitations: pendingInvitations.map((inv) => ({
       id: inv.id,
-      doctor: inv.doctorId,
+      doctor: inv.doctor ? toApiDoc(inv.doctor) : null,
       createdAt: inv.createdAt,
     })),
   });
@@ -118,11 +117,7 @@ export const assignDoctor = async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const result = await inviteDoctorToFacility(
-      doctorUserId,
-      ctx.facility.id,
-      req.user!.id,
-    );
+    const result = await inviteDoctorToFacility(doctorUserId, ctx.facility.id, req.user!.id);
     res.status(200).json({
       invitationId: result.invitation.id,
       facilityName: result.facility.name,
@@ -148,6 +143,11 @@ export const unassignDoctor = async (req: AuthRequest, res: Response) => {
 
   try {
     const result = await unassignDoctorFromFacility(doctorUserId, ctx.facility.id);
+    emitToFacility(ctx.facility.id, 'clinic:roster:updated', {
+      reason: 'doctor_unassigned',
+      facilityId: ctx.facility.id,
+      doctorUserId,
+    });
     res.json({
       profile: result.profile,
       message: 'Médico desvinculado de la clínica',
@@ -202,7 +202,7 @@ export const changeMyPassword = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
   }
 
-  const user = await User.findById(req.user!.id);
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
   const isMatch = await bcrypt.compare(currentPassword, user.password);
@@ -210,8 +210,10 @@ export const changeMyPassword = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'La contraseña actual no es correcta' });
   }
 
-  user.password = await bcrypt.hash(String(newPassword), 10);
-  await user.save();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { password: await bcrypt.hash(String(newPassword), 10) },
+  });
 
   res.json({ message: 'Contraseña actualizada correctamente' });
 };

@@ -1,17 +1,15 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
-import { User } from '../models/User';
-import { Pharmacy } from '../models/Pharmacy';
-import { PharmacyProduct } from '../models/PharmacyProduct';
-import { PharmacyOrder } from '../models/PharmacyOrder';
+import { prisma } from '../lib/prisma';
 import { UserRole, PharmacyOrderStatus } from '../types/enums';
 import { createStaffUser } from '../services/staffUser.service';
 import { sanitizeUser } from '../utils/sanitizeUser';
+import { toApiDoc } from '../utils/apiDoc';
 
 async function getPharmacyAdminContext(userId: string) {
-  const user = await User.findById(userId);
+  const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user?.pharmacyId) return null;
-  const pharmacy = await Pharmacy.findById(user.pharmacyId);
+  const pharmacy = await prisma.pharmacy.findUnique({ where: { id: user.pharmacyId } });
   return { user, pharmacy };
 }
 
@@ -26,7 +24,7 @@ export const getMyContext = async (req: AuthRequest, res: Response) => {
   }
   res.json({
     user: sanitizeUser(ctx.user),
-    pharmacy: ctx.pharmacy,
+    pharmacy: ctx.pharmacy ? toApiDoc(ctx.pharmacy) : null,
   });
 };
 
@@ -35,13 +33,12 @@ export const getStats = async (req: AuthRequest, res: Response) => {
   if (!ctx?.pharmacy) {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
-  const pharmacyId = ctx.pharmacy._id;
+  const pharmacyId = ctx.pharmacy.id;
   const [products, orders, pendingReview] = await Promise.all([
-    PharmacyProduct.countDocuments({ pharmacyId }),
-    PharmacyOrder.countDocuments({ pharmacyId }),
-    PharmacyOrder.countDocuments({
-      pharmacyId,
-      status: PharmacyOrderStatus.PENDING,
+    prisma.pharmacyProduct.count({ where: { pharmacyId } }),
+    prisma.pharmacyOrder.count({ where: { pharmacyId } }),
+    prisma.pharmacyOrder.count({
+      where: { pharmacyId, status: PharmacyOrderStatus.PENDING },
     }),
   ]);
   res.json({ products, orders, pendingReview });
@@ -85,12 +82,13 @@ export const listStaff = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
 
-  const staff = await User.find({
-    pharmacyId: ctx.pharmacy._id,
-    role: { $in: staffRolesForPharmacyAdmin() },
-  })
-    .select('-password')
-    .sort({ createdAt: -1 });
+  const staff = await prisma.user.findMany({
+    where: {
+      pharmacyId: ctx.pharmacy.id,
+      role: { in: staffRolesForPharmacyAdmin() },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
   res.json(staff.map(sanitizeUser));
 };
@@ -101,10 +99,11 @@ export const listProducts = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
 
-  const products = await PharmacyProduct.find({ pharmacyId: ctx.pharmacy._id }).sort({
-    name: 1,
+  const products = await prisma.pharmacyProduct.findMany({
+    where: { pharmacyId: ctx.pharmacy.id },
+    orderBy: { name: 'asc' },
   });
-  res.json(products);
+  res.json(products.map(toApiDoc));
 };
 
 export const createProduct = async (req: AuthRequest, res: Response) => {
@@ -113,11 +112,10 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
 
-  const product = await PharmacyProduct.create({
-    ...req.body,
-    pharmacyId: ctx.pharmacy._id,
+  const product = await prisma.pharmacyProduct.create({
+    data: { ...req.body, pharmacyId: ctx.pharmacy.id },
   });
-  res.status(201).json(product);
+  res.status(201).json(toApiDoc(product));
 };
 
 export const updateProduct = async (req: AuthRequest, res: Response) => {
@@ -126,13 +124,16 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
 
-  const product = await PharmacyProduct.findOneAndUpdate(
-    { _id: req.params.id, pharmacyId: ctx.pharmacy._id },
-    { $set: req.body },
-    { new: true, runValidators: true },
-  );
-  if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
-  res.json(product);
+  const existing = await prisma.pharmacyProduct.findFirst({
+    where: { id: req.params.id, pharmacyId: ctx.pharmacy.id },
+  });
+  if (!existing) return res.status(404).json({ error: 'Producto no encontrado' });
+
+  const product = await prisma.pharmacyProduct.update({
+    where: { id: existing.id },
+    data: req.body,
+  });
+  res.json(toApiDoc(product));
 };
 
 export const deleteProduct = async (req: AuthRequest, res: Response) => {
@@ -141,11 +142,10 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
 
-  const result = await PharmacyProduct.findOneAndDelete({
-    _id: req.params.id,
-    pharmacyId: ctx.pharmacy._id,
+  const result = await prisma.pharmacyProduct.deleteMany({
+    where: { id: req.params.id, pharmacyId: ctx.pharmacy.id },
   });
-  if (!result) return res.status(404).json({ error: 'Producto no encontrado' });
+  if (result.count === 0) return res.status(404).json({ error: 'Producto no encontrado' });
   res.json({ message: 'Producto eliminado' });
 };
 
@@ -155,8 +155,10 @@ export const listOrders = async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: 'Sin farmacia asignada' });
   }
 
-  const orders = await PharmacyOrder.find({ pharmacyId: ctx.pharmacy._id })
-    .sort({ createdAt: -1 })
-    .limit(100);
-  res.json(orders);
+  const orders = await prisma.pharmacyOrder.findMany({
+    where: { pharmacyId: ctx.pharmacy.id },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+  res.json(orders.map(toApiDoc));
 };

@@ -124,48 +124,87 @@ class ProfileGradientHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (leading != null) ...[
-                      leading!,
-                      const SizedBox(width: 14),
-                    ],
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _badge(),
-                          const SizedBox(height: 14),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final actionWidgets = actions ?? const <Widget>[];
+                    final titleBlock = Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _badge(),
+                        const SizedBox(height: 14),
+                        Text(
+                          name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                                height: 1.1,
+                              ),
+                        ),
+                        if (subtitle != null && subtitle!.isNotEmpty) ...[
+                          const SizedBox(height: 6),
                           Text(
-                            name,
+                            subtitle!,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
-                                .headlineMedium
+                                .bodyMedium
                                 ?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.5,
-                                  height: 1.1,
+                                  color: Colors.white.withValues(alpha: 0.88),
                                 ),
                           ),
-                          if (subtitle != null && subtitle!.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              subtitle!,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.88),
-                                  ),
-                            ),
-                          ],
                         ],
-                      ),
-                    ),
-                    ...?actions,
-                  ],
+                      ],
+                    );
+
+                    final stackActionsBelow =
+                        constraints.maxWidth < 360 && actionWidgets.isNotEmpty;
+
+                    if (stackActionsBelow) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (leading != null) ...[
+                                leading!,
+                                const SizedBox(width: 14),
+                              ],
+                              Expanded(child: titleBlock),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: actionWidgets,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (leading != null) ...[
+                          leading!,
+                          const SizedBox(width: 14),
+                        ],
+                        Expanded(child: titleBlock),
+                        ...actionWidgets,
+                      ],
+                    );
+                  },
                 ),
                 if (stats.isNotEmpty) ...[
                   const SizedBox(height: 18),
@@ -217,12 +256,16 @@ class ProfileGradientHeader extends StatelessWidget {
         children: [
           Icon(badgeIcon, color: badgeColor, size: 16),
           const SizedBox(width: 6),
-          Text(
-            badgeLabel,
-            style: TextStyle(
-              color: badgeColor,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
+          Flexible(
+            child: Text(
+              badgeLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: badgeColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
             ),
           ),
         ],
@@ -358,8 +401,8 @@ class ProfileInfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 110,
+          Flexible(
+            flex: 2,
             child: Text(
               label,
               style: const TextStyle(

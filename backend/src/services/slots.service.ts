@@ -1,10 +1,7 @@
 import { wallClockToDate } from '../utils/appTimezone';
-import { Appointment } from '../models/Appointment';
-import { DoctorProfile } from '../models/DoctorProfile';
-import { DoctorWorkSchedule } from '../models/DoctorWorkSchedule';
-import { MedicalFacility } from '../models/MedicalFacility';
+import { prisma } from '../lib/prisma';
 import { AppointmentStatus, AppointmentType, DayOfWeek } from '../types/enums';
-import { Types } from 'mongoose';
+import { toApiDoc } from '../utils/apiDoc';
 
 export type SlotDuration = number;
 
@@ -19,9 +16,9 @@ const JS_DAY_TO_ENUM: DayOfWeek[] = [
 ];
 
 export interface TimeSlot {
-  startTime: string;   // "09:00"
-  endTime: string;     // "09:30"
-  dateTime: string;    // ISO
+  startTime: string;
+  endTime: string;
+  dateTime: string;
   facilityId?: string;
   facilityName?: string;
   available: boolean;
@@ -33,8 +30,8 @@ function hhmm(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function toMinutes(hhmm: string): number {
-  const [h, m] = hhmm.split(':').map(Number);
+function toMinutes(hhmmStr: string): number {
+  const [h, m] = hhmmStr.split(':').map(Number);
   return h * 60 + (m || 0);
 }
 
@@ -46,7 +43,6 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
   return aStart < bEnd && aEnd > bStart;
 }
 
-/** Redondea a bloques de 15 min (15–120). */
 export function normalizeDuration(raw?: number): SlotDuration {
   if (!raw || Number.isNaN(raw)) return 30;
   const rounded = Math.round(raw / 15) * 15;
@@ -74,60 +70,62 @@ export async function getAvailableSlots(params: {
   const dayDate = new Date(year, month - 1, day);
   const dayOfWeek = JS_DAY_TO_ENUM[dayDate.getDay()];
 
-  const scheduleQuery: Record<string, unknown> = {
+  const scheduleWhere: {
+    doctorId: string;
+    dayOfWeek: string;
+    isActive: boolean;
+    facilityId?: string | { in: string[] };
+  } = {
     doctorId,
     dayOfWeek,
     isActive: true,
   };
+
   if (type === AppointmentType.PRESENTIAL && facilityId) {
-    scheduleQuery.facilityId = facilityId;
+    scheduleWhere.facilityId = facilityId;
   }
 
   if (type === AppointmentType.PRESENTIAL && !facilityId) {
-    const profile = await DoctorProfile.findOne({ userId: doctorId }).select('facilityIds');
-    if (profile?.facilityIds.length) {
-      scheduleQuery.facilityId = { $in: profile.facilityIds };
+    const profile = await prisma.doctorProfile.findUnique({
+      where: { userId: doctorId },
+      include: { facilities: true },
+    });
+    if (profile?.facilities.length) {
+      scheduleWhere.facilityId = { in: profile.facilities.map((f) => f.facilityId) };
     }
   }
 
-  const schedules = await DoctorWorkSchedule.find(scheduleQuery).populate<{
-    facilityId: { _id: Types.ObjectId; name: string } | null;
-  }>('facilityId', 'name');
+  const schedules = await prisma.doctorWorkSchedule.findMany({
+    where: scheduleWhere,
+    include: { facility: { select: { id: true, name: true } } },
+  });
 
   type Block = {
     startTime: string;
     endTime: string;
-    facility: { _id: Types.ObjectId; name: string } | null;
+    facility: { _id: string; name: string } | null;
   };
 
-  const blocks: Block[] = schedules.map((sched) => {
-    const facilityRaw = sched.facilityId;
-    const facility =
-      facilityRaw && typeof facilityRaw === 'object' && '_id' in facilityRaw
-        ? (facilityRaw as { _id: Types.ObjectId; name: string })
-        : null;
-    return {
-      startTime: sched.startTime,
-      endTime: sched.endTime,
-      facility,
-    };
-  });
+  const blocks: Block[] = schedules.map((sched) => ({
+    startTime: sched.startTime,
+    endTime: sched.endTime,
+    facility: sched.facility ? { _id: sched.facility.id, name: sched.facility.name } : null,
+  }));
 
   if (blocks.length === 0 && type === AppointmentType.ONLINE) {
-    blocks.push({
-      startTime: '09:00',
-      endTime: '18:00',
-      facility: null,
-    });
+    blocks.push({ startTime: '09:00', endTime: '18:00', facility: null });
   }
 
   if (blocks.length === 0 && type === AppointmentType.PRESENTIAL && facilityId) {
-    const facility = await MedicalFacility.findById(facilityId).select('name');
+    const facility = await prisma.medicalFacility.findUnique({
+      where: { id: facilityId },
+      select: { id: true, name: true },
+    });
     if (facility) {
       blocks.push({
         startTime: '08:00',
         endTime: '18:00',
-        facility: { _id: facility._id, name: facility.name },
+        facility: { _id: facility.id, name: facility.name },
       });
     }
   }
@@ -137,10 +135,12 @@ export async function getAvailableSlots(params: {
   const dayEnd = new Date(dayDate);
   dayEnd.setHours(23, 59, 59, 999);
 
-  const existing = await Appointment.find({
-    doctorId,
-    status: { $nin: [AppointmentStatus.CANCELLED] },
-    dateTime: { $gte: dayStart, $lte: dayEnd },
+  const existing = await prisma.appointment.findMany({
+    where: {
+      doctorId,
+      status: { not: AppointmentStatus.CANCELLED },
+      dateTime: { gte: dayStart, lte: dayEnd },
+    },
   });
 
   const slots: TimeSlot[] = [];
@@ -166,7 +166,7 @@ export async function getAvailableSlots(params: {
         startTime: hhmm(min),
         endTime: hhmm(min + durationMinutes),
         dateTime: slotStart.toISOString(),
-        facilityId: facility?._id?.toString(),
+        facilityId: facility?._id,
         facilityName: facility?.name,
         available: !isPast && !conflict,
       });
@@ -175,7 +175,6 @@ export async function getAvailableSlots(params: {
 
   slots.sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 
-  // Misma hora en varias sedes: si hay conflicto (p. ej. cita virtual), marcar todas como no disponibles.
   const byDateTime = new Map<string, TimeSlot>();
   for (const slot of slots) {
     const key = slot.dateTime;
@@ -209,13 +208,14 @@ export async function assertNoConflict(params: {
   const { doctorId, dateTime, durationMinutes, excludeId } = params;
   const endTime = computeEndTime(dateTime, durationMinutes);
 
-  const query: Record<string, unknown> = {
-    doctorId,
-    status: { $nin: [AppointmentStatus.CANCELLED] },
-  };
-  if (excludeId) query._id = { $ne: excludeId };
+  const existing = await prisma.appointment.findMany({
+    where: {
+      doctorId,
+      status: { not: AppointmentStatus.CANCELLED },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+  });
 
-  const existing = await Appointment.find(query);
   const conflict = existing.find((appt) => {
     const apptEnd =
       appt.endTime ?? computeEndTime(appt.dateTime, normalizeDuration(appt.durationMinutes));

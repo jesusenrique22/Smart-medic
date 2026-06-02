@@ -1,32 +1,23 @@
-import { Types } from 'mongoose';
-import { Appointment } from '../models/Appointment';
-import { DoctorProfile } from '../models/DoctorProfile';
+import { prisma } from '../lib/prisma';
 import { AppointmentStatus } from '../types/enums';
 
 export async function recalculateDoctorRating(doctorId: string): Promise<void> {
-  const doctorOid = new Types.ObjectId(doctorId);
-  const [agg] = await Appointment.aggregate([
-    {
-      $match: {
-        doctorId: doctorOid,
-        status: AppointmentStatus.COMPLETED,
-        patientRating: { $exists: true, $ne: null },
-      },
+  const agg = await prisma.appointment.aggregate({
+    where: {
+      doctorId,
+      status: AppointmentStatus.COMPLETED,
+      patientRating: { not: null },
     },
-    {
-      $group: {
-        _id: null,
-        avg: { $avg: '$patientRating' },
-        count: { $sum: 1 },
-      },
-    },
-  ]);
+    _avg: { patientRating: true },
+    _count: { patientRating: true },
+  });
 
-  const rating = agg?.avg != null ? Math.round(agg.avg * 10) / 10 : 5;
-  const ratingCount = agg?.count ?? 0;
+  const rating =
+    agg._avg.patientRating != null ? Math.round(agg._avg.patientRating * 10) / 10 : 5;
+  const ratingCount = agg._count.patientRating ?? 0;
 
-  await DoctorProfile.findOneAndUpdate(
-    { userId: doctorId },
-    { $set: { rating, ratingCount } },
-  );
+  await prisma.doctorProfile.updateMany({
+    where: { userId: doctorId },
+    data: { rating, ratingCount },
+  });
 }
