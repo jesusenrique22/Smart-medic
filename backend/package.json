@@ -6,8 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "bash ../scripts/_bootstrap-web-tunnel.sh && ts-node-dev --respawn --transpile-only src/index.ts",
-    "dev:debug": "bash ../scripts/_bootstrap-web-tunnel.sh && ts-node-dev --inspect=9230 --transpile-only --no-notify src/index.ts",
+    "dev": "bash ../scripts/_bootstrap-web-tunnel.sh && bash ../scripts/_guard-dev-port.sh 3000 'Backend API' http://127.0.0.1:3000/health && ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev:debug": "bash ../scripts/_bootstrap-web-tunnel.sh && bash ../scripts/_guard-dev-port.sh 3000 'Backend API' http://127.0.0.1:3000/health && ts-node-dev --inspect=9230 --transpile-only --no-notify src/index.ts",
     "build": "tsc",
     "db:seed": "ts-node-dev --transpile-only src/scripts/seed.ts",
     "db:seed:fresh": "ts-node-dev --transpile-only src/scripts/seed.ts -- --fresh --yes",
