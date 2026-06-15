@@ -83,7 +83,7 @@ class TunnelWebHandler(SimpleHTTPRequestHandler):
             for k, v in self.headers.items()
             if k.lower() not in ("host", "connection", "content-length")
         }
-        conn = http.client.HTTPConnection(API_HOST, port, timeout=15)
+        conn = http.client.HTTPConnection(API_HOST, port, timeout=45)
         try:
             conn.request(method, path, body=body, headers=headers)
             resp = conn.getresponse()

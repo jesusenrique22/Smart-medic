@@ -10,7 +10,11 @@ import '../../../../core/config/api_config.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/widgets/app_design.dart';
+import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/experience/animated_blobs.dart';
+import '../../../../core/widgets/experience/fade_slide_in.dart';
+import '../../../../core/widgets/promo/promo_carousel.dart';
+import '../../../../core/widgets/promo/promo_models.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../data/auth_api_service.dart';
 import '../../data/role_mapper.dart';
@@ -31,13 +35,6 @@ class _LoginPageState extends State<LoginPage> {
   final _authApi = AuthApiService();
   bool _obscureText = true;
   bool _loading = false;
-
-  static const _featureItems = <({String label, IconData icon})>[
-    (label: 'Citas', icon: Icons.calendar_month_rounded),
-    (label: 'Emergencias', icon: Icons.emergency_rounded),
-    (label: 'Resultados', icon: Icons.biotech_rounded),
-    (label: 'Seguros', icon: Icons.verified_user_rounded),
-  ];
 
   @override
   void dispose() {
@@ -72,7 +69,6 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  /// Devuelve true si se navegó fuera del login (evita setState tras dispose).
   Future<bool> _onAuthSuccess(AuthResponse response) async {
     AppSession.setSession(user: response.user, tokenValue: response.token);
     AppRealtime.reconnectAfterAuth();
@@ -90,7 +86,14 @@ class _LoginPageState extends State<LoginPage> {
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red.shade700),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.emergency,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+        ),
+      ),
     );
   }
 
@@ -169,411 +172,143 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final isCompact = width < 600;
-    final isWide = width >= 860;
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
-
-    if (isCompact) {
-      return ResponsiveScaffold(
-        hideNavigation: true,
-        backgroundColor: const Color(0xFF1E3A8A),
-        body: _buildMobileLogin(context, bottomInset),
-      );
-    }
+    final isWide = width >= 900;
 
     return ResponsiveScaffold(
       hideNavigation: true,
-      backgroundColor: AppColors.background,
-      body: AppPage(
-        maxWidth: 1120,
-        padding: EdgeInsets.fromLTRB(28, 28, 28, 28 + bottomInset),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            if (isWide) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(child: _buildHero(context, isCompact: false)),
-                  const SizedBox(width: 24),
-                  SizedBox(
-                    width: 430,
-                    child: _buildLoginForm(context, isCompact: false),
-                  ),
-                ],
-              );
-            }
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHero(context, isCompact: false),
-                const SizedBox(height: 20),
-                _buildLoginForm(context, isCompact: false),
-              ],
-            );
-          },
+      hideAppBar: true,
+      body: AnimatedBlobsBackground(
+        child: SafeArea(
+          child: isWide ? _buildWideLayout(context) : _buildMobileLayout(context),
         ),
       ),
     );
   }
 
-  /// Login móvil a pantalla completa: gradiente, marca fuerte y formulario flotante.
-  Widget _buildMobileLogin(BuildContext context, double bottomInset) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF0F172A),
-            Color(0xFF1E40AF),
-            Color(0xFF2563EB),
-          ],
-          stops: [0.0, 0.55, 1.0],
-        ),
-      ),
-      child: Stack(
+  Widget _buildMobileLayout(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomInset),
+      child: Column(
         children: [
-          Positioned(top: -80, right: -60, child: _decorCircle(220, 0.07)),
-          Positioned(top: 120, left: -70, child: _decorCircle(160, 0.05)),
-          Positioned(
-            bottom: 180,
-            right: -40,
-            child: _decorCircle(120, 0.06),
+          FadeSlideIn(child: _buildLogo()),
+          const SizedBox(height: AppSpacing.lg),
+          FadeSlideIn(
+            index: 1,
+            child: PromoCarousel(offers: PromoMockData.loginSlides),
           ),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(12, 16, 12, 24 + bottomInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildMobileHeader(context),
-                  const SizedBox(height: 24),
-                  _buildMobileFormCard(context),
-                ],
-              ),
-            ),
-          ),
+          const SizedBox(height: AppSpacing.xxl),
+          FadeSlideIn(index: 2, child: _buildFormCard(context, isCompact: true)),
         ],
       ),
     );
   }
 
-  /// Logo horizontal (`web/Smart Medic.png`, ~1071×233).
-  Widget _buildBrandLogo({double widthFactor = 0.92, double maxLogoWidth = 520}) {
+  Widget _buildWideLayout(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1100),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: FadeSlideIn(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildLogo(maxWidth: 480),
+                      const SizedBox(height: AppSpacing.xxl),
+                      PromoCarousel(offers: PromoMockData.loginSlides),
+                      const SizedBox(height: AppSpacing.xxl),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        alignment: WrapAlignment.center,
+                        children: const [
+                          _FeatureChip(label: 'Citas', icon: Icons.calendar_month_rounded),
+                          _FeatureChip(label: 'Emergencias', icon: Icons.emergency_rounded),
+                          _FeatureChip(label: 'Farmacia', icon: Icons.local_pharmacy_rounded),
+                          _FeatureChip(label: 'Seguros', icon: Icons.shield_rounded),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 40),
+              SizedBox(
+                width: 420,
+                child: FadeSlideIn(
+                  index: 2,
+                  offset: const Offset(0.08, 0),
+                  child: _buildFormCard(context, isCompact: false),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLogo({double maxWidth = 320}) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : MediaQuery.sizeOf(context).width;
         const aspect = 1071 / 233;
-        final width = (maxWidth * widthFactor).clamp(0.0, maxLogoWidth);
-        final height = width / aspect;
-        return Center(
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: Image.asset(
-              AppBranding.loginLogo,
-              fit: BoxFit.contain,
-              alignment: Alignment.center,
-              filterQuality: FilterQuality.high,
-            ),
-          ),
+        final width = (constraints.maxWidth.isFinite
+                ? constraints.maxWidth
+                : MediaQuery.sizeOf(context).width)
+            .clamp(0.0, maxWidth);
+        return Image.asset(
+          AppBranding.loginLogo,
+          width: width,
+          height: width / aspect,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
         );
       },
     );
   }
 
-  Widget _buildMobileHeader(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _buildBrandLogo(widthFactor: 1, maxLogoWidth: 640),
-        const SizedBox(height: 20),
-        Text(
-          'Tu salud, citas y emergencias\nen una sola plataforma.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: Colors.white.withValues(alpha: 0.88),
-            height: 1.35,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          '¿Qué puedes hacer?',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: Colors.white.withValues(alpha: 0.75),
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.4,
-          ),
-        ),
-        const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 2.55,
-          ),
-          itemCount: _featureItems.length,
-          itemBuilder: (context, i) => _mobileFeatureTile(_featureItems[i]),
-        ),
-      ],
-    );
-  }
-
-  Widget _mobileFeatureTile(({String label, IconData icon}) item) {
+  Widget _buildFormCard(BuildContext context, {required bool isCompact}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.18),
-            Colors.white.withValues(alpha: 0.08),
-          ],
-        ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(item.icon, color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                height: 1.2,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMobileFormCard(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.65),
-          width: 1.2,
-        ),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
-          ),
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.08),
-            blurRadius: 0,
-            spreadRadius: 0,
-            offset: const Offset(0, 1),
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 32,
+            offset: const Offset(0, 16),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(27),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 26, 22, 28),
-          child: _buildLoginFormFields(context, isCompact: true),
-        ),
-      ),
+      padding: EdgeInsets.all(isCompact ? 22 : 32),
+      child: _buildFormFields(context, isCompact: isCompact),
     );
   }
 
-  Widget _buildHeroGradientShell({required Widget child}) {
-    return Stack(
-      clipBehavior: Clip.hardEdge,
-      children: [
-        const Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF3B82F6),
-                  Color(0xFF2563EB),
-                  Color(0xFF1E40AF),
-                ],
-                stops: [0.0, 0.45, 1.0],
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          top: -48,
-          right: -32,
-          child: _decorCircle(140, 0.10),
-        ),
-        Positioned(
-          bottom: -24,
-          left: -36,
-          child: _decorCircle(100, 0.08),
-        ),
-        child,
-      ],
-    );
-  }
-
-  Widget _decorCircle(double size, double opacity) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: opacity),
-      ),
-    );
-  }
-
-  Widget _buildHero(BuildContext context, {required bool isCompact}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: _buildHeroGradientShell(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: _buildHeroContent(context, isCompact: isCompact),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroContent(BuildContext context, {required bool isCompact}) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _buildBrandLogo(
-          widthFactor: isCompact ? 0.96 : 0.88,
-          maxLogoWidth: isCompact ? 520 : 640,
-        ),
-        const SizedBox(height: 14),
-        Text(
-          isCompact
-              ? 'Salud conectada en un solo lugar'
-              : 'Pacientes, médicos y administradores conectados a la base de datos.',
-          textAlign: TextAlign.center,
-          style: (isCompact ? theme.textTheme.bodyMedium : theme.textTheme.bodyLarge)
-              ?.copyWith(
-            color: Colors.white.withValues(alpha: isCompact ? 0.9 : 0.82),
-            height: 1.35,
-          ),
-        ),
-        SizedBox(height: isCompact ? 18 : 28),
-        _buildFeatureGrid(isCompact: isCompact),
-      ],
-    );
-  }
-
-  Widget _buildFeatureGrid({required bool isCompact}) {
-    if (isCompact) {
-      return GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 2.35,
-        children: _featureItems.map(_heroFeatureChip).toList(),
-      );
-    }
-
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: _featureItems
-          .map((f) => AppStatusPill(label: f.label, color: Colors.white, icon: f.icon))
-          .toList(),
-    );
-  }
-
-  Widget _heroFeatureChip(({String label, IconData icon}) item) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(item.icon, color: Colors.white, size: 16),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              item.label,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoginForm(BuildContext context, {required bool isCompact}) {
-    return AppPanel(
-      padding: EdgeInsets.all(isCompact ? 20 : 28),
-      child: _buildLoginFormFields(context, isCompact: isCompact),
-    );
-  }
-
-  Widget _buildLoginFormFields(BuildContext context, {required bool isCompact}) {
-    final theme = Theme.of(context);
-
+  Widget _buildFormFields(BuildContext context, {required bool isCompact}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Accede a tu cuenta',
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-            letterSpacing: -0.3,
+          'Bienvenido de vuelta',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.5,
           ),
         ),
         const SizedBox(height: 6),
         Text(
-          'Inicia sesión o regístrate como paciente.',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: AppColors.textSecondary,
-            height: 1.4,
-          ),
+          'Inicia sesión o crea tu cuenta de paciente',
+          style: Theme.of(context).textTheme.bodyMedium,
         ),
-        SizedBox(height: isCompact ? 20 : 24),
+        SizedBox(height: isCompact ? 20 : 28),
         TextField(
           controller: _emailController,
           enabled: !_loading,
@@ -605,64 +340,139 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
-        const SizedBox(height: 4),
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
             onPressed: _loading
                 ? null
-                : () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Recuperación de contraseña próximamente'),
-                      ),
-                    );
-                  },
+                : () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Recuperación de contraseña próximamente'),
+                    ),
+                  ),
             child: const Text('Olvidé mi contraseña'),
           ),
         ),
         const SizedBox(height: 8),
-        _buildPrimaryLoginButton(isCompact: isCompact),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 48,
-          child: OutlinedButton.icon(
-            onPressed: _loading ? null : _showRegisterDialog,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.border),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
-            label: const Text('Crear cuenta de paciente'),
-          ),
+        _GradientButton(
+          label: 'Iniciar sesión',
+          loading: _loading,
+          onPressed: _submitLogin,
         ),
-        SizedBox(height: isCompact ? 12 : 16),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _loading ? null : _showRegisterDialog,
+          icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+          label: const Text('Crear cuenta de paciente'),
+        ),
+        SizedBox(height: isCompact ? 16 : 20),
         _buildDemoSection(context, isCompact: isCompact),
       ],
     );
   }
 
-  Widget _buildPrimaryLoginButton({required bool isCompact}) {
+  Widget _buildDemoSection(BuildContext context, {required bool isCompact}) {
+    final demos = [
+      _DemoEntry('Paciente', Icons.person_rounded, () => _loginAsDemo('juan@patient.com')),
+      _DemoEntry('Médico', Icons.health_and_safety_rounded, () => _loginAsDemo('maria@doctor.com')),
+      _DemoEntry('Admin', Icons.admin_panel_settings_rounded, () => _loginAsDemo('admin@vita.com')),
+      _DemoEntry('Clínica', Icons.local_hospital_rounded, () => _loginAsDemo('clinic.admin@vita.com')),
+      _DemoEntry('Farmacia', Icons.local_pharmacy_rounded, () => _loginAsDemo('pharmacy.admin@vita.com')),
+      _DemoEntry('Lab', Icons.biotech_rounded, () => _loginAsDemo('lab@tech.com')),
+      _DemoEntry('Ambulancia', Icons.emergency_rounded, () => _enterMockRole(Role.driver, AppRoutes.ambulanceDashboard)),
+    ];
+
+    final chips = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: demos
+          .map(
+            (d) => ActionChip(
+              avatar: Icon(d.icon, size: 16),
+              label: Text(d.label),
+              onPressed: _loading ? null : d.onPressed,
+            ),
+          )
+          .toList(),
+    );
+
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        title: Text(
+          'Cuentas de prueba',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: const Text(
+          'Contraseña: password',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        children: [chips],
+      ),
+    );
+  }
+}
+
+class _FeatureChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+
+  const _FeatureChip({required this.label, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GradientButton extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final VoidCallback onPressed;
+
+  const _GradientButton({
+    required this.label,
+    required this.loading,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
-      height: 52,
+      height: 54,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: _loading
+          gradient: loading
               ? null
-              : const LinearGradient(
-                  colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
-                ),
-          color: _loading ? AppColors.primary.withValues(alpha: 0.6) : null,
-          boxShadow: _loading
+              : const LinearGradient(colors: AppColors.headerGradient),
+          color: loading ? AppColors.primary.withValues(alpha: 0.5) : null,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          boxShadow: loading
               ? null
               : [
                   BoxShadow(
@@ -675,10 +485,10 @@ class _LoginPageState extends State<LoginPage> {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: _loading ? null : _submitLogin,
-            borderRadius: BorderRadius.circular(14),
+            onTap: loading ? null : onPressed,
+            borderRadius: BorderRadius.circular(AppRadius.md),
             child: Center(
-              child: _loading
+              child: loading
                   ? const SizedBox(
                       width: 22,
                       height: 22,
@@ -687,23 +497,22 @@ class _LoginPageState extends State<LoginPage> {
                         color: Colors.white,
                       ),
                     )
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                  : Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Iniciar sesión',
-                          style: TextStyle(
+                          label,
+                          style: const TextStyle(
                             color: Colors.white,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                             fontSize: 16,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Icon(
+                        const SizedBox(width: 8),
+                        const Icon(
                           Icons.arrow_forward_rounded,
-                          size: 20,
                           color: Colors.white,
+                          size: 20,
                         ),
                       ],
                     ),
@@ -713,108 +522,12 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
-
-  Widget _buildDemoSection(BuildContext context, {required bool isCompact}) {
-    final demoButtons = [
-      _DemoEntry('Paciente', Icons.person_rounded, () => _loginAsDemo('juan@patient.com')),
-      _DemoEntry('Médico', Icons.health_and_safety_rounded, () => _loginAsDemo('maria@doctor.com')),
-      _DemoEntry('Jefe app', Icons.admin_panel_settings_rounded, () => _loginAsDemo('admin@vita.com')),
-      _DemoEntry('Admin clínica', Icons.local_hospital_rounded, () => _loginAsDemo('clinic.admin@vita.com')),
-      _DemoEntry('Admin farmacia', Icons.local_pharmacy_rounded, () => _loginAsDemo('pharmacy.admin@vita.com')),
-      _DemoEntry('Farmacéutico', Icons.science_outlined, () => _loginAsDemo('farmacista@vita.com')),
-      _DemoEntry(
-        'Ambulancia',
-        Icons.emergency_rounded,
-        () => _enterMockRole(Role.driver, AppRoutes.ambulanceDashboard),
-      ),
-      _DemoEntry(
-        'Farmacia',
-        Icons.inventory_2_rounded,
-        () => _enterMockRole(Role.pharmacy, AppRoutes.pharmacyAdmin),
-      ),
-      _DemoEntry(
-        'Laboratorio',
-        Icons.biotech_rounded,
-        () => _loginAsDemo('lab@tech.com'),
-      ),
-    ];
-
-    final chips = Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: demoButtons
-          .map(
-            (d) => _buildDemoButton(d.label, d.icon, d.onPressed, isCompact: isCompact),
-          )
-          .toList(),
-    );
-
-    if (!isCompact) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Cuentas de prueba (contraseña: password)',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          chips,
-        ],
-      );
-    }
-
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        childrenPadding: const EdgeInsets.only(top: 8, bottom: 4),
-        shape: const Border(),
-        collapsedShape: const Border(),
-        title: Text(
-          'Cuentas de prueba',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        subtitle: Text(
-          'Contraseña: password',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
-        children: [chips],
-      ),
-    );
-  }
-
-  Widget _buildDemoButton(
-    String label,
-    IconData icon,
-    VoidCallback onPressed, {
-    required bool isCompact,
-  }) {
-    return OutlinedButton.icon(
-      onPressed: _loading ? null : onPressed,
-      style: isCompact
-          ? OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              visualDensity: VisualDensity.compact,
-              textStyle: const TextStyle(fontSize: 12),
-            )
-          : null,
-      icon: Icon(icon, size: isCompact ? 18 : 24),
-      label: Text(label),
-    );
-  }
 }
 
 class _DemoEntry {
   final String label;
   final IconData icon;
   final VoidCallback onPressed;
-
   const _DemoEntry(this.label, this.icon, this.onPressed);
 }
 
@@ -826,7 +539,6 @@ class _RegisterPatientForm {
     required this.password,
     required this.confirmPassword,
   });
-
   final String name;
   final String email;
   final String phone;
@@ -836,7 +548,6 @@ class _RegisterPatientForm {
 
 class _RegisterPatientDialog extends StatefulWidget {
   const _RegisterPatientDialog();
-
   @override
   State<_RegisterPatientDialog> createState() => _RegisterPatientDialogState();
 }
@@ -859,71 +570,107 @@ class _RegisterPatientDialogState extends State<_RegisterPatientDialog> {
   }
 
   void _submit() {
-    final form = _RegisterPatientForm(
-      name: _nameController.text.trim(),
-      email: _emailController.text.trim(),
-      phone: _phoneController.text.trim(),
-      password: _passwordController.text,
-      confirmPassword: _confirmController.text,
+    Navigator.pop(
+      context,
+      _RegisterPatientForm(
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        password: _passwordController.text,
+        confirmPassword: _confirmController.text,
+      ),
     );
-    FocusScope.of(context).unfocus();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!context.mounted) return;
-      Navigator.pop(context, form);
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Crear cuenta de paciente'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Nombre completo'),
-              textCapitalization: TextCapitalization.words,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _emailController,
-              decoration: const InputDecoration(labelText: 'Correo'),
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _phoneController,
-              decoration: const InputDecoration(labelText: 'Teléfono (opcional)'),
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Contraseña'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _confirmController,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Confirmar contraseña'),
-              onSubmitted: (_) => _submit(),
-            ),
-          ],
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: AppColors.headerGradient,
+                      ),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: const Icon(Icons.person_add_rounded, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Crear cuenta',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Nombre completo'),
+                textCapitalization: TextCapitalization.words,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _emailController,
+                decoration: const InputDecoration(labelText: 'Correo'),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _phoneController,
+                decoration: const InputDecoration(labelText: 'Teléfono (opcional)'),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Contraseña'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _confirmController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Confirmar contraseña'),
+                onSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton(
+                      onPressed: _submit,
+                      child: const Text('Registrarse'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Registrarse'),
-        ),
-      ],
     );
   }
 }

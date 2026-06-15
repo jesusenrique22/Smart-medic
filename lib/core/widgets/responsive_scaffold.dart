@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../branding/app_branding.dart';
 import '../auth/app_session.dart';
+import '../../features/auth/domain/models/role.dart';
 import '../navigation/app_navigation.dart';
 import '../navigation/app_routes.dart';
 import '../theme/app_colors.dart';
@@ -13,6 +14,7 @@ class ResponsiveScaffold extends StatefulWidget {
   final List<Widget>? actions;
   final PreferredSizeWidget? appBar;
   final bool hideNavigation;
+  final bool hideAppBar;
   final Color? backgroundColor;
   final Widget? child;
   final Widget? body;
@@ -25,6 +27,7 @@ class ResponsiveScaffold extends StatefulWidget {
     this.actions,
     this.appBar,
     this.hideNavigation = false,
+    this.hideAppBar = false,
     this.backgroundColor,
     this.child,
     this.body,
@@ -61,13 +64,14 @@ class _ResponsiveScaffoldState extends State<ResponsiveScaffold> {
         : const _AccessDeniedView();
 
     // Optional AppBar.
-    final PreferredSizeWidget? resolvedAppBar =
-        widget.appBar ??
-        ((widget.title != null || widget.actions != null)
-            ? AppBar(title: widget.title, actions: widget.actions)
-            : widget.hideNavigation
-            ? null
-            : AppBar(title: Text(AppRoutes.titleFor(currentRoute))));
+    final PreferredSizeWidget? resolvedAppBar = widget.hideAppBar
+        ? null
+        : widget.appBar ??
+            ((widget.title != null || widget.actions != null)
+                ? AppBar(title: widget.title, actions: widget.actions)
+                : widget.hideNavigation
+                ? null
+                : AppBar(title: Text(AppRoutes.titleFor(currentRoute))));
 
     // Full‑screen pages – hide navigation.
     if (widget.hideNavigation) {
@@ -85,15 +89,18 @@ class _ResponsiveScaffoldState extends State<ResponsiveScaffold> {
       final destinations = AppRoutes.mobileDestinationsForRole(
         AppSession.activeRole,
       );
+      final tabRoute = AppRoutes.tabRouteFor(currentRoute, AppSession.activeRole);
       final selectedIndex = destinations.indexWhere(
-        (destination) => destination.path == currentRoute,
+        (destination) => destination.path == tabRoute,
       );
+      final emergencyFab = _resolveEmergencyFab(currentRoute);
 
       return Scaffold(
         appBar: resolvedAppBar,
         backgroundColor: widget.backgroundColor,
         body: pageContent,
-        floatingActionButton: widget.floatingActionButton,
+        floatingActionButton: emergencyFab,
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
         bottomNavigationBar:
             widget.bottomNavigationBar ??
             (destinations.length < 2
@@ -116,13 +123,24 @@ class _ResponsiveScaffoldState extends State<ResponsiveScaffold> {
     }
 
     final destinations = AppRoutes.destinationsForRole(AppSession.activeRole);
+    final tabRoute = AppRoutes.tabRouteFor(currentRoute, AppSession.activeRole);
     final selectedIndex = destinations.indexWhere(
-      (destination) => destination.path == currentRoute,
+      (destination) =>
+          destination.path == currentRoute || destination.path == tabRoute,
     );
     final isExtended = width >= 1200;
+    final emergencyFab = _resolveEmergencyFab(currentRoute);
     final rail = Material(
       color: AppColors.primaryDark,
-      child: SizedBox(
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF064E3B), Color(0xFF047857)],
+          ),
+        ),
+        child: SizedBox(
         width: isExtended ? 260 : 92,
         child: SafeArea(
           child: ListView.separated(
@@ -196,18 +214,43 @@ class _ResponsiveScaffoldState extends State<ResponsiveScaffold> {
           ),
         ),
       ),
+      ),
     );
 
     return Scaffold(
       appBar: resolvedAppBar,
       backgroundColor: widget.backgroundColor,
-      floatingActionButton: widget.floatingActionButton,
+      floatingActionButton: emergencyFab,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       bottomNavigationBar: widget.bottomNavigationBar,
       body: Row(
         children: [
           rail,
           Expanded(child: pageContent),
         ],
+      ),
+    );
+  }
+
+  Widget? _resolveEmergencyFab(String currentRoute) {
+    if (widget.floatingActionButton != null) return widget.floatingActionButton;
+    if (widget.hideNavigation) return null;
+    if (AppSession.activeRole != Role.patient) return null;
+    if (currentRoute == AppRoutes.videoCall ||
+        currentRoute == AppRoutes.ambulanceCheckout ||
+        currentRoute == AppRoutes.tracking) {
+      return null;
+    }
+
+    return FloatingActionButton.extended(
+      onPressed: () => _navigateTo(AppRoutes.ambulanceCheckout),
+      backgroundColor: AppColors.emergency,
+      foregroundColor: Colors.white,
+      elevation: 6,
+      icon: const Icon(Icons.emergency_rounded),
+      label: const Text(
+        'Emergencia',
+        style: TextStyle(fontWeight: FontWeight.w800),
       ),
     );
   }

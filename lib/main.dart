@@ -18,14 +18,12 @@ import 'core/connectivity/service_connectivity.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
-/// Calienta el proxy/API en segundo plano (no bloquea la UI).
+/// Calienta API + gateway (proxy :8088) en segundo plano al abrir vía Dev Tunnel.
 void _warmDevStackInBackground() {
   if (!kIsWeb || !ApiConfig.openedViaDevTunnel) return;
-  unawaited(
-    ServiceConnectivity.instance.isApiReachable(
-      timeout: const Duration(seconds: 2),
-    ),
-  );
+  final connectivity = ServiceConnectivity.instance;
+  unawaited(connectivity.isApiReachable(timeout: const Duration(seconds: 4)));
+  unawaited(connectivity.isGatewayReachable(timeout: const Duration(seconds: 6)));
 }
 
 Future<void> main() async {

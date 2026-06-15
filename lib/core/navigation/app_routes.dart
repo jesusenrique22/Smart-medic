@@ -26,6 +26,7 @@ class AppRoutes {
   static const String messages = '/messages';
   static const String gatewayDebug = '/debug/gateway';
   static const String dashboard = '/dashboard';
+  static const String healthServices = '/health_services';
   static const String schedule = '/schedule';
   static const String appointments = '/appointments';
   static const String tracking = '/tracking';
@@ -79,9 +80,15 @@ class AppRoutes {
       roles: {Role.patient},
     ),
     AppRouteDestination(
+      path: healthServices,
+      label: 'Salud',
+      icon: Icons.health_and_safety_rounded,
+      roles: {Role.patient},
+    ),
+    AppRouteDestination(
       path: patientProfile,
       label: 'Perfil',
-      icon: Icons.assignment_ind_rounded,
+      icon: Icons.person_rounded,
       roles: {Role.patient},
     ),
     AppRouteDestination(
@@ -330,11 +337,12 @@ class AppRoutes {
     if (role == Role.patient) {
       const essentialPatientRoutes = [
         dashboard,
+        healthServices,
         messages,
+        patientProfile,
         schedule,
         appointments,
         patientShareExams,
-        patientProfile,
         ambulanceCheckout,
         medicalHistory,
       ];
@@ -361,27 +369,21 @@ class AppRoutes {
           roles: {Role.patient},
         ),
         AppRouteDestination(
+          path: healthServices,
+          label: 'Salud',
+          icon: Icons.health_and_safety_rounded,
+          roles: {Role.patient},
+        ),
+        AppRouteDestination(
           path: messages,
           label: 'Mensajes',
           icon: Icons.chat_rounded,
           roles: {Role.patient, Role.doctor},
         ),
         AppRouteDestination(
-          path: appointments,
-          label: 'Citas',
-          icon: Icons.event_note_rounded,
-          roles: {Role.patient, Role.doctor},
-        ),
-        AppRouteDestination(
-          path: patientShareExams,
-          label: 'Exámenes',
-          icon: Icons.upload_file_rounded,
-          roles: {Role.patient},
-        ),
-        AppRouteDestination(
           path: patientProfile,
           label: 'Perfil',
-          icon: Icons.assignment_ind_rounded,
+          icon: Icons.person_rounded,
           roles: {Role.patient},
         ),
       ];
@@ -435,8 +437,56 @@ class AppRoutes {
         : roleDestinations;
   }
 
+  /// Rutas secundarias agrupadas bajo una pestaña principal del paciente.
+  static const Set<String> _patientHealthTabRoutes = {
+    healthServices,
+    schedule,
+    appointments,
+    patientShareExams,
+    labMarketplace,
+    labResults,
+    pharmacy,
+    prescriptions,
+    clinicNetwork,
+    insuranceWallet,
+    radiologyMarketplace,
+    medicalHistory,
+    ambulanceCheckout,
+    tracking,
+    clinicalHistory,
+  };
+
+  /// Resuelve la ruta de pestaña activa para resaltar la navegación inferior.
+  static String tabRouteFor(String? route, Role role) {
+    final normalized = normalize(route);
+    if (role == Role.patient) {
+      if (normalized == dashboard) return dashboard;
+      if (normalized == messages || normalized == videoCall) return messages;
+      if (normalized == patientProfile || normalized == clinicalHistory) {
+        return patientProfile;
+      }
+      if (_patientHealthTabRoutes.contains(normalized)) return healthServices;
+      return dashboard;
+    }
+    return normalized;
+  }
+
   /// Rutas que no aparecen en el menú lateral pero sí están permitidas por rol.
   static const Map<String, Set<Role>> _secondaryRouteRoles = {
+    healthServices: {Role.patient},
+    schedule: {Role.patient},
+    appointments: {Role.patient},
+    patientShareExams: {Role.patient},
+    labMarketplace: {Role.patient},
+    labResults: {Role.patient},
+    pharmacy: {Role.patient},
+    prescriptions: {Role.patient},
+    clinicNetwork: {Role.patient},
+    insuranceWallet: {Role.patient},
+    radiologyMarketplace: {Role.patient},
+    medicalHistory: {Role.patient},
+    ambulanceCheckout: {Role.patient},
+    tracking: {Role.patient},
     adminCreateDoctor: {Role.clinicAdmin},
     clinicAssignDoctor: {Role.clinicAdmin},
     clinicAdminPassword: {Role.clinicAdmin},
@@ -514,14 +564,17 @@ class AppRoutes {
         return 'Registrar examen';
       case patientShareExams:
         return 'Compartir exámenes';
+      case healthServices:
+        return 'Salud';
       default:
-        return destinationFor(route)?.label ?? 'VITA OS';
+        return destinationFor(route)?.label ?? 'Smart Medic';
     }
   }
 
   static Map<String, WidgetBuilder> get routes => {
     login: (_) => const LoginPage(),
     dashboard: (_) => const PatientDashboard(),
+    healthServices: (_) => const HealthServicesHub(),
     patientProfile: (_) => const PatientProfilePage(),
     clinicalHistory: (_) => const ClinicalHistoryFormPage(),
     messages: (_) => const MessagesPage(),

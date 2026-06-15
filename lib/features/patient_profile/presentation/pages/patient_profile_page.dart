@@ -66,8 +66,8 @@ class _PatientProfilePageState extends State<PatientProfilePage> {
     final email = profile?.email ?? user?.email ?? '';
     final completed = profile?.medicalHistoryCompleted ?? false;
     return ResponsiveScaffold(
+      hideAppBar: true,
       backgroundColor: AppColors.background,
-      title: const Text('Mi perfil'),
       body: ProfileScreenLayout(
         loading: _loading,
         onRefresh: _refresh,

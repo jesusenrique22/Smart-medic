@@ -7,6 +7,10 @@ import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_design.dart';
+import '../../../../core/widgets/experience/experience_header.dart';
+import '../../../../core/widgets/experience/fade_slide_in.dart';
+import '../../../../core/widgets/promo/promo_carousel.dart';
+import '../../../../core/widgets/promo/promo_models.dart';
 import '../../domain/models/pharmacy_data_mock.dart';
 import '../../domain/models/pharmacy.dart';
 import '../../domain/models/optimized_cart_result.dart';
@@ -77,55 +81,58 @@ class _PharmacyPageState extends State<PharmacyPage> {
   @override
   Widget build(BuildContext context) {
     return ResponsiveScaffold(
+      hideAppBar: true,
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => AppNavigation.safeBack(context),
-        ),
-        title: const Text('Buscador Inteligente'),
-        elevation: 0,
-      ),
       body: Stack(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSearchHeader(),
+          CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: ExperienceHeader(
+                  title: 'Farmacia',
+                  subtitle: 'Busca medicinas, escanea recetas y compara precios.',
+                  badge: '${_pharmacies.length} aliadas',
+                  icon: Icons.local_pharmacy_rounded,
+                  gradient: AppColors.pharmacyGradient,
+                  actions: [
+                    IconButton(
+                      onPressed: () => AppNavigation.safeBack(context),
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white, size: 20),
+                    ),
+                  ],
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: PromoCarousel(
+                    offers: PromoMockData.pharmacyPromos,
+                    onOfferTap: (_) {},
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(child: _buildSearchHeader()),
               if (_bestDeal != null)
-                _buildBestDealCard()
+                SliverFillRemaining(child: _buildBestDealCard())
               else
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(24, 24, 24, 8),
-                        child: Text(
-                          'Farmacias Aliadas',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                SliverPadding(
+                  padding: const EdgeInsets.all(20),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final pharmacy = _pharmacies[index];
+                        return FadeSlideIn(
+                          index: index,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 14),
+                            child: _buildPharmacyCard(pharmacy),
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          itemCount: _pharmacies.length,
-                          itemBuilder: (context, index) {
-                            final pharmacy = _pharmacies[index];
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 14),
-                              child: _buildPharmacyCard(pharmacy),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                        );
+                      },
+                      childCount: _pharmacies.length,
+                    ),
                   ),
                 ),
             ],
@@ -140,7 +147,7 @@ class _PharmacyPageState extends State<PharmacyPage> {
                     CircularProgressIndicator(color: Colors.white),
                     SizedBox(height: 16),
                     Text(
-                      'Analizando Receta...',
+                      'Analizando receta…',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -152,44 +159,34 @@ class _PharmacyPageState extends State<PharmacyPage> {
             ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _scanPrescription,
+        backgroundColor: AppColors.secondary,
+        icon: const Icon(Icons.camera_alt_rounded),
+        label: const Text('Escanear receta'),
+      ),
     );
   }
 
   Widget _buildSearchHeader() {
     return Padding(
-      padding: const EdgeInsets.all(24),
-      child: AppHeroPanel(
-        color: AppColors.secondary,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: AppPanel(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const AppStatusPill(
-              label: 'Buscador inteligente',
-              color: Colors.white,
-              icon: Icons.local_pharmacy_rounded,
-            ),
-            const SizedBox(height: 18),
             const Text(
-              'Ahorra en tus medicamentos',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 30,
-                fontWeight: FontWeight.w900,
-              ),
+              'Buscador inteligente',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Busca medicinas o escanea una receta para encontrar la farmacia con mejor disponibilidad y precio.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.78)),
-            ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _globalSearchController,
                     decoration: const InputDecoration(
-                      hintText: 'Buscar cualquier medicina...',
+                      hintText: 'Buscar medicina…',
                       prefixIcon: Icon(Icons.search_rounded),
                     ),
                     onSubmitted: (value) {
@@ -201,16 +198,6 @@ class _PharmacyPageState extends State<PharmacyPage> {
                         });
                       }
                     },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.tonalIcon(
-                  onPressed: _scanPrescription,
-                  icon: const Icon(Icons.camera_alt_rounded),
-                  label: const Text('Escanear'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppColors.secondary,
                   ),
                 ),
               ],

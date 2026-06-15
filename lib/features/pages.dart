@@ -2,6 +2,7 @@ export 'auth/presentation/pages/login_page.dart';
 export 'patient_profile/presentation/pages/patient_profile_page.dart';
 export 'patient_profile/presentation/pages/clinical_history_form_page.dart';
 export 'dashboard/presentation/pages/patient_dashboard.dart';
+export 'dashboard/presentation/pages/health_services_hub_page.dart';
 export 'appointments/presentation/pages/schedule_appointment_page.dart';
 export 'appointments/presentation/pages/my_appointments_page.dart';
 export 'appointments/presentation/pages/consultation_closure_page.dart';

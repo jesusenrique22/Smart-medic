@@ -104,16 +104,19 @@ class AppHeroPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseColor = color;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            color,
-            Color.alphaBlend(Colors.black.withValues(alpha: 0.18), color),
-          ],
+          colors: baseColor == AppColors.primary
+              ? AppColors.headerGradient
+              : [
+                  baseColor,
+                  Color.alphaBlend(Colors.black.withValues(alpha: 0.18), baseColor),
+                ],
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [

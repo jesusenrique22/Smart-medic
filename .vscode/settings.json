@@ -5,12 +5,12 @@
     "3000": {
       "label": "Smart Medic API (solo local)",
       "visibility": "private",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "3001": {
       "label": "Smart Medic Gateway (solo local)",
       "visibility": "private",
-      "onAutoForward": "notify"
+      "onAutoForward": "silent"
     },
     "8088": {
       "label": "Smart Medic Web — túnel PÚBLICO",

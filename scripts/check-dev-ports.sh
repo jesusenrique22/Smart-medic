@@ -36,6 +36,7 @@ if [[ $ok -ne 0 ]]; then
   echo "  cd realtime-gateway && pnpm run dev     # Gateway :3001"
   echo "  ./scripts/dev-services.sh               # atajo: ambos en paralelo"
   echo "  ./scripts/serve-web-tunnel.sh --build   # solo si cambiaste Dart"
+  echo "  ./scripts/tunnel-doctor.sh         # diagnóstico túnel + checklist Cursor"
   echo "  ./scripts/stop-dev-ports.sh        # detener todo y empezar limpio"
   echo ""
   echo "Luego en Cursor → Puertos: solo $PORT_WEB en Público (API/gateway vía proxy)."

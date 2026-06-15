@@ -99,12 +99,7 @@ class ProfileGradientHeader extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF0F172A),
-            Color(0xFF1E40AF),
-            Color(0xFF2563EB),
-          ],
-          stops: [0.0, 0.5, 1.0],
+          colors: AppColors.headerGradient,
         ),
         boxShadow: [
           BoxShadow(
