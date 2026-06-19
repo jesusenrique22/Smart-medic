@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -17,10 +18,9 @@ import '../../../../core/widgets/promo/promo_carousel.dart';
 import '../../../../core/widgets/promo/promo_models.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../data/auth_api_service.dart';
-import '../../data/role_mapper.dart';
+
 import '../../domain/models/role.dart';
 import '../../../patient_profile/data/patient_profile_repository.dart';
-import '../../../patient_profile/presentation/widgets/medical_history_prompt_dialog.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -76,6 +76,19 @@ class _LoginPageState extends State<LoginPage> {
       await PatientProfileRepository.refreshFromApi();
     }
     if (!mounted) return false;
+
+    if (response.user.role == Role.patient) {
+      final completed = PatientProfileRepository.activeProfile?.medicalHistoryCompleted ?? false;
+      if (!completed) {
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.clinicalHistory,
+          arguments: {'onboarding': true},
+        );
+        return true;
+      }
+    }
+
     Navigator.pushReplacementNamed(
       context,
       AppNavigation.homeRouteForRole(response.user.role),
@@ -87,70 +100,25 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline_rounded,
+                color: Colors.white, size: 18),
+            const SizedBox(width: 10),
+            Expanded(child: Text(message)),
+          ],
+        ),
         backgroundColor: AppColors.emergency,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.md),
+          borderRadius: BorderRadius.circular(AppColors.border == Colors.black ? 8 : 12),
         ),
       ),
     );
   }
 
-  Future<void> _showRegisterDialog() async {
-    final form = await showDialog<_RegisterPatientForm>(
-      context: context,
-      builder: (ctx) => const _RegisterPatientDialog(),
-    );
-
-    if (form == null || !mounted) return;
-
-    if (form.name.isEmpty || form.email.isEmpty || form.password.isEmpty) {
-      _showError('Completa nombre, correo y contraseña');
-      return;
-    }
-    if (form.password != form.confirmPassword) {
-      _showError('Las contraseñas no coinciden');
-      return;
-    }
-    if (form.password.length < 6) {
-      _showError('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-
-    setState(() => _loading = true);
-    var navigatedAway = false;
-    try {
-      final response = await _authApi.register(
-        email: form.email,
-        password: form.password,
-        name: form.name,
-        roleApi: RoleMapper.toApi(Role.patient),
-        phone: form.phone.isEmpty ? null : form.phone,
-      );
-      AppSession.setSession(user: response.user, tokenValue: response.token);
-      await PatientProfileRepository.refreshFromApi();
-      if (!mounted) return;
-      final fillHistory = await showMedicalHistoryPrompt(context);
-      if (!mounted) return;
-      if (fillHistory == true) {
-        Navigator.pushReplacementNamed(
-          context,
-          AppRoutes.clinicalHistory,
-          arguments: {'onboarding': true},
-        );
-      } else {
-        Navigator.pushReplacementNamed(context, AppRoutes.dashboard);
-      }
-      navigatedAway = true;
-    } on ApiException catch (e) {
-      _showError(e.message);
-    } catch (e) {
-      _showError('No se pudo conectar al servidor. Inicia el backend (pnpm run dev).');
-      debugPrint('Register error: $e');
-    } finally {
-      if (mounted && !navigatedAway) setState(() => _loading = false);
-    }
+  void _goToRegister() {
+    Navigator.pushNamed(context, AppRoutes.register);
   }
 
   void _fillDemoCredentials(String email) {
@@ -179,7 +147,9 @@ class _LoginPageState extends State<LoginPage> {
       hideAppBar: true,
       body: AnimatedBlobsBackground(
         child: SafeArea(
-          child: isWide ? _buildWideLayout(context) : _buildMobileLayout(context),
+          child: isWide
+              ? _buildWideLayout(context)
+              : _buildMobileLayout(context),
         ),
       ),
     );
@@ -190,16 +160,16 @@ class _LoginPageState extends State<LoginPage> {
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomInset),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + bottomInset),
       child: Column(
         children: [
           FadeSlideIn(child: _buildLogo()),
-          const SizedBox(height: AppSpacing.lg),
+          const SizedBox(height: AppSpacing.xl),
           FadeSlideIn(
             index: 1,
             child: PromoCarousel(offers: PromoMockData.loginSlides),
           ),
-          const SizedBox(height: AppSpacing.xxl),
+          const SizedBox(height: AppSpacing.xl),
           FadeSlideIn(index: 2, child: _buildFormCard(context, isCompact: true)),
         ],
       ),
@@ -208,47 +178,57 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildWideLayout(BuildContext context) {
     return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1100),
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: FadeSlideIn(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildLogo(maxWidth: 480),
-                      const SizedBox(height: AppSpacing.xxl),
-                      PromoCarousel(offers: PromoMockData.loginSlides),
-                      const SizedBox(height: AppSpacing.xxl),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        alignment: WrapAlignment.center,
-                        children: const [
-                          _FeatureChip(label: 'Citas', icon: Icons.calendar_month_rounded),
-                          _FeatureChip(label: 'Emergencias', icon: Icons.emergency_rounded),
-                          _FeatureChip(label: 'Farmacia', icon: Icons.local_pharmacy_rounded),
-                          _FeatureChip(label: 'Seguros', icon: Icons.shield_rounded),
-                        ],
-                      ),
-                    ],
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: FadeSlideIn(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildLogo(maxWidth: 480),
+                        const SizedBox(height: AppSpacing.xxl),
+                        PromoCarousel(offers: PromoMockData.loginSlides),
+                        const SizedBox(height: AppSpacing.xxl),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          alignment: WrapAlignment.center,
+                          children: const [
+                            _FeatureChip(
+                                label: 'Citas',
+                                icon: Icons.calendar_month_rounded),
+                            _FeatureChip(
+                                label: 'Emergencias',
+                                icon: Icons.emergency_rounded),
+                            _FeatureChip(
+                                label: 'Farmacia',
+                                icon: Icons.local_pharmacy_rounded),
+                            _FeatureChip(
+                                label: 'Seguros', icon: Icons.shield_rounded),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 40),
-              SizedBox(
-                width: 420,
-                child: FadeSlideIn(
-                  index: 2,
-                  offset: const Offset(0.08, 0),
-                  child: _buildFormCard(context, isCompact: false),
+                const SizedBox(width: 40),
+                SizedBox(
+                  width: 430,
+                  child: FadeSlideIn(
+                    index: 2,
+                    offset: const Offset(0.08, 0),
+                    child: _buildFormCard(context, isCompact: false),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -275,20 +255,36 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildFormCard(BuildContext context, {required bool isCompact}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 32,
-            offset: const Offset(0, 16),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.6),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                blurRadius: 40,
+                offset: const Offset(0, 20),
+                spreadRadius: -5,
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
-        ],
+          padding: EdgeInsets.all(isCompact ? 24 : 36),
+          child: _buildFormFields(context, isCompact: isCompact),
+        ),
       ),
-      padding: EdgeInsets.all(isCompact ? 22 : 32),
-      child: _buildFormFields(context, isCompact: isCompact),
     );
   }
 
@@ -296,74 +292,161 @@ class _LoginPageState extends State<LoginPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Bienvenido de vuelta',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.5,
-          ),
+        // Header de la tarjeta
+        Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: AppColors.headerGradient,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.health_and_safety_rounded,
+                  color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Bienvenido de vuelta',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                          color: AppColors.textPrimary,
+                          fontSize: 20,
+                        ),
+                  ),
+                  Text(
+                    'Inicia sesión en tu cuenta',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 12.5,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 6),
-        Text(
-          'Inicia sesión o crea tu cuenta de paciente',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        SizedBox(height: isCompact ? 20 : 28),
-        TextField(
+        SizedBox(height: isCompact ? 22 : 30),
+
+        // Campo de correo
+        _PremiumTextField(
           controller: _emailController,
           enabled: !_loading,
+          label: 'Correo electrónico',
+          hint: 'nombre@ejemplo.com',
+          icon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: 'Correo electrónico',
-            hintText: 'nombre@ejemplo.com',
-            prefixIcon: Icon(Icons.mail_outline_rounded),
-          ),
         ),
         const SizedBox(height: 14),
-        TextField(
+
+        // Campo de contraseña
+        _PremiumTextField(
           controller: _passwordController,
           enabled: !_loading,
+          label: 'Contraseña',
+          icon: Icons.lock_outline_rounded,
           obscureText: _obscureText,
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _submitLogin(),
-          decoration: InputDecoration(
-            labelText: 'Contraseña',
-            prefixIcon: const Icon(Icons.lock_outline_rounded),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscureText
-                    ? Icons.visibility_off_rounded
-                    : Icons.visibility_rounded,
-              ),
-              onPressed: () => setState(() => _obscureText = !_obscureText),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscureText
+                  ? Icons.visibility_off_rounded
+                  : Icons.visibility_rounded,
+              color: AppColors.textSecondary,
+              size: 20,
             ),
+            onPressed: () => setState(() => _obscureText = !_obscureText),
           ),
         ),
+
+        // Olvidé contraseña
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
             onPressed: _loading
                 ? null
                 : () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Recuperación de contraseña próximamente'),
+                      const SnackBar(
+                        content: Text('Recuperación de contraseña próximamente'),
+                      ),
                     ),
-                  ),
-            child: const Text('Olvidé mi contraseña'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            ),
+            child: const Text(
+              'Olvidé mi contraseña',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
+
+        // Botón principal
         _GradientButton(
           label: 'Iniciar sesión',
           loading: _loading,
           onPressed: _submitLogin,
         ),
         const SizedBox(height: 12),
+
+        // Divisor
+        Row(
+          children: [
+            Expanded(
+              child: Divider(color: AppColors.border.withValues(alpha: 0.7)),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'o',
+                style: TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Divider(color: AppColors.border.withValues(alpha: 0.7)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // Crear cuenta
         OutlinedButton.icon(
-          onPressed: _loading ? null : _showRegisterDialog,
-          icon: const Icon(Icons.person_add_alt_1_rounded, size: 20),
+          onPressed: _loading ? null : _goToRegister,
+          icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
           label: const Text('Crear cuenta de paciente'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.textPrimary,
+            side: const BorderSide(color: AppColors.border, width: 1.5),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            textStyle: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
         ),
         SizedBox(height: isCompact ? 16 : 20),
         _buildDemoSection(context, isCompact: isCompact),
@@ -373,24 +456,41 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildDemoSection(BuildContext context, {required bool isCompact}) {
     final demos = [
-      _DemoEntry('Paciente', Icons.person_rounded, () => _loginAsDemo('juan@patient.com')),
-      _DemoEntry('Médico', Icons.health_and_safety_rounded, () => _loginAsDemo('maria@doctor.com')),
-      _DemoEntry('Admin', Icons.admin_panel_settings_rounded, () => _loginAsDemo('admin@vita.com')),
-      _DemoEntry('Clínica', Icons.local_hospital_rounded, () => _loginAsDemo('clinic.admin@vita.com')),
-      _DemoEntry('Farmacia', Icons.local_pharmacy_rounded, () => _loginAsDemo('pharmacy.admin@vita.com')),
-      _DemoEntry('Lab', Icons.biotech_rounded, () => _loginAsDemo('lab@tech.com')),
-      _DemoEntry('Ambulancia', Icons.emergency_rounded, () => _enterMockRole(Role.driver, AppRoutes.ambulanceDashboard)),
+      _DemoEntry(
+          'Paciente', Icons.person_rounded, () => _loginAsDemo('juan@patient.com')),
+      _DemoEntry('Médico', Icons.health_and_safety_rounded,
+          () => _loginAsDemo('maria@doctor.com')),
+      _DemoEntry('Admin', Icons.admin_panel_settings_rounded,
+          () => _loginAsDemo('admin@vita.com')),
+      _DemoEntry('Clínica', Icons.local_hospital_rounded,
+          () => _loginAsDemo('clinic.admin@vita.com')),
+      _DemoEntry('Farmacia', Icons.local_pharmacy_rounded,
+          () => _loginAsDemo('pharmacy.admin@vita.com')),
+      _DemoEntry(
+          'Lab', Icons.biotech_rounded, () => _loginAsDemo('lab@tech.com')),
+      _DemoEntry(
+          'Ambulancia',
+          Icons.emergency_rounded,
+          () => _loginAsDemo('conductor@vita.com')),
     ];
 
     final chips = Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 7,
+      runSpacing: 7,
       children: demos
           .map(
             (d) => ActionChip(
-              avatar: Icon(d.icon, size: 16),
+              avatar: Icon(d.icon, size: 14),
               label: Text(d.label),
               onPressed: _loading ? null : d.onPressed,
+              labelStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              side: BorderSide(color: AppColors.border.withValues(alpha: 0.7)),
+              backgroundColor: AppColors.surfaceSoft,
             ),
           )
           .toList(),
@@ -400,22 +500,136 @@ class _LoginPageState extends State<LoginPage> {
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
         tilePadding: EdgeInsets.zero,
-        title: Text(
-          'Cuentas de prueba',
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
+        title: Row(
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: AppColors.warning,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.warning.withValues(alpha: 0.5),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Cuentas de prueba',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+            ),
+          ],
+        ),
+        subtitle: const Padding(
+          padding: EdgeInsets.only(left: 14),
+          child: Text(
+            'Contraseña: password',
+            style: TextStyle(
+                fontSize: 11.5, color: AppColors.textSecondary),
           ),
         ),
-        subtitle: const Text(
-          'Contraseña: password',
-          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-        ),
-        children: [chips],
+        children: [
+          const SizedBox(height: 8),
+          chips,
+        ],
       ),
     );
   }
 }
 
+/// ── Campo de texto premium ──────────────────────────────────────────────────
+class _PremiumTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final bool enabled;
+  final String label;
+  final String? hint;
+  final IconData icon;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
+  final Widget? suffixIcon;
+
+  const _PremiumTextField({
+    required this.controller,
+    required this.enabled,
+    required this.label,
+    this.hint,
+    required this.icon,
+    this.obscureText = false,
+    this.keyboardType,
+    this.textInputAction,
+    this.onSubmitted,
+    this.suffixIcon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+        color: AppColors.textPrimary,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        hintStyle: TextStyle(
+          color: AppColors.textTertiary.withValues(alpha: 0.7),
+          fontSize: 14,
+        ),
+        labelStyle: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+        prefixIcon: Container(
+          margin: const EdgeInsets.all(10),
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 18),
+        ),
+        suffixIcon: suffixIcon,
+        filled: true,
+        fillColor: AppColors.surfaceSoft,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide:
+              BorderSide(color: AppColors.border.withValues(alpha: 0.8)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide:
+              const BorderSide(color: AppColors.primary, width: 1.8),
+        ),
+      ),
+    );
+  }
+}
+
+/// ── Feature chip para layout wide ──────────────────────────────────────────
 class _FeatureChip extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -425,11 +639,18 @@ class _FeatureChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
+        color: Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(AppRadius.pill),
         border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -450,7 +671,8 @@ class _FeatureChip extends StatelessWidget {
   }
 }
 
-class _GradientButton extends StatelessWidget {
+/// ── Botón gradiente principal ────────────────────────────────────────────────
+class _GradientButton extends StatefulWidget {
   final String label;
   final bool loading;
   final VoidCallback onPressed;
@@ -462,38 +684,65 @@ class _GradientButton extends StatelessWidget {
   });
 
   @override
+  State<_GradientButton> createState() => _GradientButtonState();
+}
+
+class _GradientButtonState extends State<_GradientButton> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 54,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: loading
-              ? null
-              : const LinearGradient(colors: AppColors.headerGradient),
-          color: loading ? AppColors.primary.withValues(alpha: 0.5) : null,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          boxShadow: loading
-              ? null
-              : [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.35),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        if (!widget.loading) widget.onPressed();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 100),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 54,
+          decoration: BoxDecoration(
+            gradient: widget.loading
+                ? null
+                : LinearGradient(
+                    colors: _pressed
+                        ? [
+                            const Color(0xFF047857),
+                            const Color(0xFF059669),
+                          ]
+                        : AppColors.headerGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: loading ? null : onPressed,
-            borderRadius: BorderRadius.circular(AppRadius.md),
+            color: widget.loading
+                ? AppColors.primary.withValues(alpha: 0.5)
+                : null,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: widget.loading
+                ? null
+                : [
+                    BoxShadow(
+                      color: AppColors.primary
+                          .withValues(alpha: _pressed ? 0.2 : 0.4),
+                      blurRadius: _pressed ? 8 : 20,
+                      offset: Offset(0, _pressed ? 2 : 8),
+                      spreadRadius: _pressed ? -2 : 0,
+                    ),
+                  ],
+          ),
+          child: Material(
+            color: Colors.transparent,
             child: Center(
-              child: loading
+              child: widget.loading
                   ? const SizedBox(
                       width: 22,
                       height: 22,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                        strokeWidth: 2.5,
                         color: Colors.white,
                       ),
                     )
@@ -501,11 +750,12 @@ class _GradientButton extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          label,
+                          widget.label,
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                            fontSize: 15.5,
+                            letterSpacing: 0.2,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -531,146 +781,8 @@ class _DemoEntry {
   const _DemoEntry(this.label, this.icon, this.onPressed);
 }
 
-class _RegisterPatientForm {
-  const _RegisterPatientForm({
-    required this.name,
-    required this.email,
-    required this.phone,
-    required this.password,
-    required this.confirmPassword,
-  });
-  final String name;
-  final String email;
-  final String phone;
-  final String password;
-  final String confirmPassword;
-}
+// Old _RegisterPatientForm and _RegisterPatientDialog removed.
+// Registration is now handled by the full RegisterPage wizard.
 
-class _RegisterPatientDialog extends StatefulWidget {
-  const _RegisterPatientDialog();
-  @override
-  State<_RegisterPatientDialog> createState() => _RegisterPatientDialogState();
-}
 
-class _RegisterPatientDialogState extends State<_RegisterPatientDialog> {
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmController = TextEditingController();
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _phoneController.dispose();
-    _passwordController.dispose();
-    _confirmController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    Navigator.pop(
-      context,
-      _RegisterPatientForm(
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
-        phone: _phoneController.text.trim(),
-        password: _passwordController.text,
-        confirmPassword: _confirmController.text,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadius.xl),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: AppColors.headerGradient,
-                      ),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                    ),
-                    child: const Icon(Icons.person_add_rounded, color: Colors.white),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Crear cuenta',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Nombre completo'),
-                textCapitalization: TextCapitalization.words,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Correo'),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _phoneController,
-                decoration: const InputDecoration(labelText: 'Teléfono (opcional)'),
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Contraseña'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _confirmController,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Confirmar contraseña'),
-                onSubmitted: (_) => _submit(),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: FilledButton(
-                      onPressed: _submit,
-                      child: const Text('Registrarse'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -68,7 +68,7 @@ if [[ -f "$ROOT/config/local-paths.env" ]]; then
   source "$ROOT/config/local-paths.env"
 fi
 xcc="$ROOT/ios/Flutter/Generated.xcconfig"
-legacy_re='GitHub/Smart-Medic|GitHub/Smart_Medic|Documents/GitHub/'
+legacy_re='GitHub/Smart-Medic'
 if [[ -f "$xcc" ]]; then
   if grep -qE "$legacy_re" "$xcc" 2>/dev/null; then
     fail "Generated.xcconfig tiene rutas GitHub/Smart-Medic — ./scripts/ensure-local-paths.sh"

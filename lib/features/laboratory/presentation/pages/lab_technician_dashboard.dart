@@ -21,11 +21,19 @@ class LabTechnicianDashboard extends StatefulWidget {
 
 class _LabTechnicianDashboardState extends State<LabTechnicianDashboard> {
   final _workflow = LabWorkflowService.instance;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     _workflow.seedDemoIfEmpty();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _refresh() => setState(() {});
@@ -42,8 +50,15 @@ class _LabTechnicianDashboardState extends State<LabTechnicianDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final pending = _workflow.pending;
-    final inProgress = _workflow.inProgress;
+    final query = _searchQuery.trim().toLowerCase();
+    final pending = _workflow.pending.where((o) =>
+        o.patientName.toLowerCase().contains(query) ||
+        (o.exam?.name.toLowerCase().contains(query) ?? false) ||
+        o.id.toLowerCase().contains(query)).toList();
+    final inProgress = _workflow.inProgress.where((o) =>
+        o.patientName.toLowerCase().contains(query) ||
+        (o.exam?.name.toLowerCase().contains(query) ?? false) ||
+        o.id.toLowerCase().contains(query)).toList();
     final completedToday = _workflow.completedToday;
 
     return ResponsiveScaffold(
@@ -119,6 +134,39 @@ class _LabTechnicianDashboardState extends State<LabTechnicianDashboard> {
               ],
             ),
             const SizedBox(height: 8),
+            TextField(
+              controller: _searchController,
+              onChanged: (v) => setState(() => _searchQuery = v),
+              decoration: InputDecoration(
+                hintText: 'Buscar por paciente o examen…',
+                prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             if (pending.isEmpty && inProgress.isEmpty)
               _emptyOrdersHint()
             else ...[
@@ -318,9 +366,11 @@ class _LabTechnicianDashboardState extends State<LabTechnicianDashboard> {
       margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: highlight
-            ? BorderSide(color: Colors.blue.shade200, width: 1.5)
-            : BorderSide.none,
+        side: order.isUrgent
+            ? BorderSide(color: Colors.red.shade400, width: 1.5)
+            : (highlight
+                ? BorderSide(color: Colors.blue.shade200, width: 1.5)
+                : BorderSide.none),
       ),
       child: ListTile(
         onTap: () => _openOrder(order),
@@ -332,14 +382,117 @@ class _LabTechnicianDashboardState extends State<LabTechnicianDashboard> {
             color: type?.color ?? AppColors.primary,
           ),
         ),
-        title: Text(
-          order.patientName,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                order.patientName,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+            ),
+            if (order.isUrgent)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.red.shade200, width: 0.8),
+                ),
+                child: Text(
+                  'STAT 🚨',
+                  style: TextStyle(
+                    color: Colors.red.shade800,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 9,
+                  ),
+                ),
+              ),
+          ],
         ),
-        subtitle: Text(
-          '${exam?.name ?? order.examId} · ${order.status.label}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              'Estudio: ${exam?.name ?? order.examId}',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: order.status == LabWorkOrderStatus.completed
+                        ? Colors.green.shade50
+                        : (order.status == LabWorkOrderStatus.inProgress
+                            ? Colors.blue.shade50
+                            : Colors.orange.shade50),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    order.status.label.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      color: order.status == LabWorkOrderStatus.completed
+                          ? Colors.green.shade800
+                          : (order.status == LabWorkOrderStatus.inProgress
+                              ? Colors.blue.shade800
+                              : Colors.orange.shade800),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ID: ${order.id}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 10),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                if (order.patientPhone != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.phone_outlined, size: 12, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        order.patientPhone!,
+                        style: const TextStyle(color: Colors.grey, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                if (order.patientDocument != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.badge_outlined, size: 12, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        order.patientDocument!,
+                        style: const TextStyle(color: Colors.grey, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_today_outlined, size: 11, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${order.createdAt.day}/${order.createdAt.month}/${order.createdAt.year} ${order.createdAt.hour.toString().padLeft(2, '0')}:${order.createdAt.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(color: Colors.grey, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
         ),
         trailing: const Icon(Icons.chevron_right_rounded),
       ),

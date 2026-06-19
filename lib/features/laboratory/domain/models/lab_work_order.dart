@@ -27,23 +27,27 @@ class LabWorkOrder {
   final String id;
   final String patientName;
   final String? patientDocument;
+  final String? patientPhone;
   final String examId;
   final LabWorkOrderStatus status;
   final DateTime createdAt;
   final String? clinicalNotes;
   final String? technicianNotes;
   final String? resultSummary;
+  final bool isUrgent;
 
   LabWorkOrder({
     required this.id,
     required this.patientName,
     this.patientDocument,
+    this.patientPhone,
     required this.examId,
     this.status = LabWorkOrderStatus.pending,
     required this.createdAt,
     this.clinicalNotes,
     this.technicianNotes,
     this.resultSummary,
+    this.isUrgent = false,
   });
 
   LabExamDefinition? get exam => LabExamCatalog.findById(examId);
@@ -52,17 +56,20 @@ class LabWorkOrder {
     LabWorkOrderStatus? status,
     String? technicianNotes,
     String? resultSummary,
+    bool? isUrgent,
   }) {
     return LabWorkOrder(
       id: id,
       patientName: patientName,
       patientDocument: patientDocument,
+      patientPhone: patientPhone,
       examId: examId,
       status: status ?? this.status,
       createdAt: createdAt,
       clinicalNotes: clinicalNotes,
       technicianNotes: technicianNotes ?? this.technicianNotes,
       resultSummary: resultSummary ?? this.resultSummary,
+      isUrgent: isUrgent ?? this.isUrgent,
     );
   }
 }

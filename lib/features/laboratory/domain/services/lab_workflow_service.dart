@@ -33,12 +33,15 @@ class LabWorkflowService {
     register(
       patientName: 'María López',
       patientDocument: 'V-12.345.678',
+      patientPhone: '+58 412-111-2233',
       examId: 'hema-cbc',
       clinicalNotes: 'Control anual',
+      isUrgent: true,
     );
     register(
       patientName: 'Carlos Ruiz',
       patientDocument: 'V-98.765.432',
+      patientPhone: '+58 414-999-8877',
       examId: 'urine-routine',
     );
     final second = _orders.last;
@@ -48,16 +51,20 @@ class LabWorkflowService {
   LabWorkOrder register({
     required String patientName,
     String? patientDocument,
+    String? patientPhone,
     required String examId,
     String? clinicalNotes,
+    bool isUrgent = false,
   }) {
     final order = LabWorkOrder(
       id: 'LAB-${_seq++}',
       patientName: patientName,
       patientDocument: patientDocument,
+      patientPhone: patientPhone,
       examId: examId,
       createdAt: DateTime.now(),
       clinicalNotes: clinicalNotes,
+      isUrgent: isUrgent,
     );
     _orders.insert(0, order);
     return order;

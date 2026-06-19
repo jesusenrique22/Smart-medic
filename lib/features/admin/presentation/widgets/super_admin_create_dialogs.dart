@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/widgets/safe_dialog.dart';
 import '../../data/super_admin_api_service.dart';
+import '../../../laboratory/domain/models/lab_exam_catalog.dart';
 
 class NamedOption {
   final String id;
@@ -210,6 +211,7 @@ class _CreateLaboratoryDialogState extends State<CreateLaboratoryDialog> {
   final _name = TextEditingController();
   final _address = TextEditingController();
   final _phone = TextEditingController();
+  final Map<String, Map<String, dynamic>> _selectedExams = {};
   bool _saving = false;
 
   @override
@@ -227,12 +229,20 @@ class _CreateLaboratoryDialogState extends State<CreateLaboratoryDialog> {
       );
       return;
     }
+    if (_selectedExams.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debes seleccionar al menos un examen')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
+      final services = _selectedExams.values.toList();
       final lab = await widget.api.createLaboratory(
         name: _name.text,
         address: _address.text,
         phone: _phone.text,
+        services: services,
       );
       final id = lab['_id']?.toString() ?? lab['id']?.toString() ?? '';
       final labName = lab['name'] as String? ?? _name.text.trim();
@@ -253,35 +263,113 @@ class _CreateLaboratoryDialogState extends State<CreateLaboratoryDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Registrar laboratorio'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'El laboratorio quedará disponible para asignar técnicos.',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del laboratorio *',
-                hintText: 'Ej: BioLab Central',
+      content: SizedBox(
+        width: 450,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'El laboratorio quedará disponible para asignar técnicos.',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _address,
-              decoration: const InputDecoration(labelText: 'Dirección *'),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _phone,
-              decoration: const InputDecoration(labelText: 'Teléfono'),
-              keyboardType: TextInputType.phone,
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: _name,
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del laboratorio *',
+                  hintText: 'Ej: BioLab Central',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _address,
+                decoration: const InputDecoration(labelText: 'Dirección *'),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _phone,
+                decoration: const InputDecoration(labelText: 'Teléfono'),
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Seleccione los Exámenes Disponibles *',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                height: 250,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: LabExamCatalog.all.length,
+                  itemBuilder: (context, index) {
+                    final exam = LabExamCatalog.all[index];
+                    final isSelected = _selectedExams.containsKey(exam.id);
+
+                    return Column(
+                      children: [
+                        CheckboxListTile(
+                          title: Text(exam.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                          subtitle: Text(
+                            '${exam.sampleType.label} • Prep: ${exam.preparation}',
+                            style: const TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                          value: isSelected,
+                          onChanged: (val) {
+                            setState(() {
+                              if (val == true) {
+                                _selectedExams[exam.id] = {
+                                  'name': exam.name,
+                                  'price': exam.referencePrice,
+                                  'requirements': exam.preparation,
+                                };
+                              } else {
+                                _selectedExams.remove(exam.id);
+                              }
+                            });
+                          },
+                        ),
+                        if (isSelected)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 24, right: 24, bottom: 8),
+                            child: Row(
+                              children: [
+                                const Text('Precio de examen: \$', style: TextStyle(fontSize: 13)),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  width: 80,
+                                  height: 35,
+                                  child: TextFormField(
+                                    initialValue: exam.referencePrice.toStringAsFixed(2),
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    decoration: const InputDecoration(
+                                      contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    onChanged: (val) {
+                                      final price = double.tryParse(val) ?? exam.referencePrice;
+                                      _selectedExams[exam.id]!['price'] = price;
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const Divider(height: 1),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [

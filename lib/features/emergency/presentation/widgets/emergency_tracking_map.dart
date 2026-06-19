@@ -34,25 +34,32 @@ class EmergencyTrackingMap extends StatelessWidget {
     final patientStyle = MapPoiStyle.forType('PATIENT');
     final ambulanceStyle = MapPoiStyle.forType('AMBULANCE');
 
+    final markers = <Marker>[
+      MapIconMarker(
+        point: patient.latLng,
+        icon: patientStyle.icon,
+        color: patientStyle.color,
+      ).toMarker(),
+    ];
+
+    if (request.ambulanceLocation != null) {
+      markers.add(
+        MapIconMarker(
+          point: request.ambulanceLocation!.latLng,
+          icon: ambulanceStyle.icon,
+          color: ambulanceStyle.color,
+          size: 40,
+        ).toMarker(width: 50, height: 50),
+      );
+    }
+
     return AppMapView(
       controller: controller,
       initialCenter: patient,
       initialZoom: MapConfig.trackingZoom,
       layers: [
         MarkerLayer(
-          markers: [
-            MapIconMarker(
-              point: patient.latLng,
-              icon: patientStyle.icon,
-              color: patientStyle.color,
-            ).toMarker(),
-            MapIconMarker(
-              point: ambulance.latLng,
-              icon: ambulanceStyle.icon,
-              color: ambulanceStyle.color,
-              size: 40,
-            ).toMarker(width: 50, height: 50),
-          ],
+          markers: markers,
         ),
       ],
     );

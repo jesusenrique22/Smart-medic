@@ -20,6 +20,7 @@ import pharmacyStaffRoutes from './routes/pharmacyStaff.routes';
 import notificationRoutes from './routes/notification.routes';
 import emergencyRoutes from './routes/emergency.routes';
 import ambulanceCrewRoutes from './routes/ambulanceCrew.routes';
+import equipmentRoutes from './routes/equipment.routes';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -63,6 +64,7 @@ app.use('/api/pharmacy-staff', pharmacyStaffRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/emergencies', emergencyRoutes);
 app.use('/api/ambulance-crew', ambulanceCrewRoutes);
+app.use('/api/equipment', equipmentRoutes);
 app.use('/internal/realtime', internalRealtimeRoutes);
 
 async function start() {

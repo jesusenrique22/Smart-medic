@@ -48,6 +48,12 @@
 	<string>Se necesita la cámara para videollamadas con tu médico.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Se necesita el micrófono para llamadas y videollamadas.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Se necesita tu ubicación para solicitar la ambulancia y rastrearla en tiempo real.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Se necesita tu ubicación para solicitar la ambulancia y rastrearla en tiempo real.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Se necesita tu ubicación para solicitar la ambulancia y rastrearla en tiempo real.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

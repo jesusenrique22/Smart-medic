@@ -13,7 +13,14 @@ const JWT_SECRET = jwtSecret();
 async function createRoleProfile(
   userId: string,
   role: UserRole,
-  data: { name: string; email: string; phone?: string },
+  data: {
+    name: string;
+    email: string;
+    phone?: string;
+    address?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+  },
 ) {
   if (role === UserRole.PATIENT) {
     await prisma.patientProfile.create({
@@ -22,6 +29,9 @@ async function createRoleProfile(
         fullName: data.name,
         email: data.email,
         phone: data.phone,
+        address: data.address,
+        emergencyContactName: data.emergencyContactName,
+        emergencyContactPhone: data.emergencyContactPhone,
       },
     });
     await prisma.medicalHistory.create({
@@ -31,7 +41,16 @@ async function createRoleProfile(
 }
 
 export const register = async (req: Request, res: Response) => {
-  const { email, password, name, role, phone } = req.body;
+  const {
+    email,
+    password,
+    name,
+    role,
+    phone,
+    address,
+    emergencyContactName,
+    emergencyContactPhone,
+  } = req.body;
 
   if (role !== UserRole.PATIENT) {
     return res.status(403).json({
@@ -54,9 +73,26 @@ export const register = async (req: Request, res: Response) => {
       },
     });
 
-    await createRoleProfile(user.id, role, { name, email: user.email, phone });
+    await createRoleProfile(user.id, role, {
+      name,
+      email: user.email,
+      phone,
+      address,
+      emergencyContactName,
+      emergencyContactPhone,
+    });
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(
+      {
+        id: user.id,
+        role: user.role,
+        managedFacilityId: user.managedFacilityId,
+        pharmacyId: user.pharmacyId,
+        laboratoryId: user.laboratoryId,
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' },
+    );
     res.status(201).json({ user: sanitizeUser(user), token });
   } catch (error) {
     console.error(error);
@@ -80,7 +116,17 @@ export const login = async (req: Request, res: Response) => {
 
     await ensureProfilesForUser(user);
 
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(
+      {
+        id: user.id,
+        role: user.role,
+        managedFacilityId: user.managedFacilityId,
+        pharmacyId: user.pharmacyId,
+        laboratoryId: user.laboratoryId,
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' },
+    );
     res.status(200).json({ user: sanitizeUser(user), token });
   } catch (error) {
     console.error(error);

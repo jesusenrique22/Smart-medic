@@ -6,7 +6,6 @@ import '../../../../core/navigation/app_navigation.dart';
 import '../../../../core/navigation/app_routes.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/widgets/app_design.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../data/patient_api_service.dart';
 import '../../data/patient_profile_repository.dart';
@@ -16,14 +15,19 @@ class ClinicalHistoryFormPage extends StatefulWidget {
   const ClinicalHistoryFormPage({super.key});
 
   @override
-  State<ClinicalHistoryFormPage> createState() => _ClinicalHistoryFormPageState();
+  State<ClinicalHistoryFormPage> createState() =>
+      _ClinicalHistoryFormPageState();
 }
 
-class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
+class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   bool _loading = false;
   bool _didLoad = false;
+  late final AnimationController _headerCtrl;
+  late final Animation<double> _headerAnim;
 
+  // ── Controllers ───────────────────────────────────────────────────────────
   final _referredBy = TextEditingController();
   final _fullName = TextEditingController();
   final _documentId = TextEditingController();
@@ -58,6 +62,17 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
   final _insurance = TextEditingController();
   final _policy = TextEditingController();
 
+  // ── Completion tracking ───────────────────────────────────────────────────
+  int get _filledSections {
+    int filled = 0;
+    if (_fullName.text.isNotEmpty || _documentId.text.isNotEmpty) filled++;
+    if (_phone.text.isNotEmpty || _emergencyName.text.isNotEmpty) filled++;
+    if (_hypertension != null || _diabetes != null || _allergies.text.isNotEmpty) filled++;
+    if (_weight.text.isNotEmpty || _height.text.isNotEmpty) filled++;
+    if (_insurance.text.isNotEmpty) filled++;
+    return filled;
+  }
+
   bool _isOnboarding(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments;
     return args is Map && args['onboarding'] == true;
@@ -66,6 +81,12 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
   @override
   void initState() {
     super.initState();
+    _headerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _headerAnim = CurvedAnimation(parent: _headerCtrl, curve: Curves.easeOut);
+    _headerCtrl.forward();
     _weight.addListener(_recalculateBmi);
     _height.addListener(_recalculateBmi);
     _birthDate.addListener(_updateAge);
@@ -154,6 +175,7 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
     final hM = hCm / 100;
     final imc = w / (hM * hM);
     _bmi.text = imc.toStringAsFixed(1);
+    if (mounted) setState(() {});
   }
 
   PatientProfile _buildProfile({required bool completed}) {
@@ -198,9 +220,7 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
   Future<void> _save({required bool completed}) async {
     if (!_formKey.currentState!.validate()) return;
     if (_fullName.text.trim().isEmpty || _email.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nombre y correo son obligatorios')),
-      );
+      _showSnack('Nombre y correo son obligatorios', isError: true);
       return;
     }
 
@@ -215,25 +235,11 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
         );
         await PatientProfileRepository.refreshFromApi();
       } on ApiException catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.message),
-              backgroundColor: Colors.red.shade700,
-            ),
-          );
-        }
+        if (mounted) _showSnack(e.message, isError: true);
         setState(() => _loading = false);
         return;
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('No se pudo guardar: $e'),
-              backgroundColor: Colors.red.shade700,
-            ),
-          );
-        }
+        if (mounted) _showSnack('No se pudo guardar: $e', isError: true);
         setState(() => _loading = false);
         return;
       }
@@ -241,14 +247,9 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
 
     if (!mounted) return;
     setState(() => _loading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          completed
-              ? 'Historia clínica guardada correctamente.'
-              : 'Borrador guardado.',
-        ),
-      ),
+    _showSnack(
+      completed ? '¡Historia clínica guardada! 🎉' : 'Borrador guardado',
+      isError: false,
     );
     if (_isOnboarding(context)) {
       Navigator.pushReplacementNamed(context, AppRoutes.dashboard);
@@ -257,9 +258,30 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
     }
   }
 
+  void _showSnack(String msg, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(msg)),
+          ],
+        ),
+        backgroundColor: isError ? AppColors.emergency : AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   Future<void> _pickBirthDate() async {
-    final initial = DateTime.tryParse(_birthDate.text.trim()) ??
-        DateTime(1990, 1, 1);
+    final initial =
+        DateTime.tryParse(_birthDate.text.trim()) ?? DateTime(1990, 1, 1);
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -278,31 +300,12 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
 
   @override
   void dispose() {
+    _headerCtrl.dispose();
     for (final c in [
-      _referredBy,
-      _fullName,
-      _documentId,
-      _birthDate,
-      _age,
-      _occupation,
-      _address,
-      _phone,
-      _email,
-      _emergencyName,
-      _emergencyPhone,
-      _vaccines,
-      _allergies,
-      _surgeries,
-      _medications,
-      _conditions,
-      _weight,
-      _height,
-      _bmi,
-      _obesityType,
-      _recommendedSurgery,
-      _observations,
-      _insurance,
-      _policy,
+      _referredBy, _fullName, _documentId, _birthDate, _age, _occupation,
+      _address, _phone, _email, _emergencyName, _emergencyPhone, _vaccines,
+      _allergies, _surgeries, _medications, _conditions, _weight, _height,
+      _bmi, _obesityType, _recommendedSurgery, _observations, _insurance, _policy,
     ]) {
       c.dispose();
     }
@@ -312,87 +315,109 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
   @override
   Widget build(BuildContext context) {
     final onboarding = _isOnboarding(context);
+
     return ResponsiveScaffold(
       hideNavigation: onboarding,
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Historia Clínica'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-          onPressed: () => onboarding
-              ? Navigator.pushReplacementNamed(context, AppRoutes.dashboard)
-              : AppNavigation.safeBack(context),
-        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: !onboarding,
+        leading: onboarding
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => AppNavigation.safeBack(context),
+              ),
+        title: onboarding
+            ? null
+            : const Text(
+                'Historia Clínica',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+              ),
       ),
-      body: AppPage(
-        maxWidth: 920,
-        child: Form(
-          key: _formKey,
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              AppHeroPanel(
-                color: AppColors.primary,
+              // ── Hero Header ────────────────────────────────────────────
+              FadeTransition(
+                opacity: _headerAnim,
+                child: _HeroHeader(
+                  onboarding: onboarding,
+                  filledSections: _filledSections,
+                  totalSections: 5,
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // ── Sections ───────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const AppStatusPill(
-                      label: 'Historia clínica',
-                      color: Colors.white,
-                      icon: Icons.assignment_rounded,
+                    _FormSection(
+                      title: 'Datos personales',
+                      subtitle: 'Identificación y demografía',
+                      icon: Icons.badge_rounded,
+                      color: AppColors.primary,
+                      child: _sectionPersonal(),
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Tu expediente médico',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
+                    const SizedBox(height: 12),
+                    _FormSection(
+                      title: 'Contacto',
+                      subtitle: 'Teléfono, correo y emergencias',
+                      icon: Icons.contact_phone_rounded,
+                      color: AppColors.info,
+                      child: _sectionContact(),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
+                    _FormSection(
+                      title: 'Antecedentes médicos',
+                      subtitle: 'Condiciones, alergias y medicamentos',
+                      icon: Icons.medical_services_rounded,
+                      color: AppColors.emergency,
+                      child: _sectionAntecedents(),
+                    ),
+                    const SizedBox(height: 12),
+                    _FormSection(
+                      title: 'Datos clínicos',
+                      subtitle: 'Medidas corporales y tipo de sangre',
+                      icon: Icons.monitor_heart_rounded,
+                      color: AppColors.secondary,
+                      child: _sectionClinical(),
+                    ),
+                    const SizedBox(height: 12),
+                    _FormSection(
+                      title: 'Seguro médico',
+                      subtitle: 'Opcional — para facturación',
+                      icon: Icons.shield_rounded,
+                      color: AppColors.promo,
+                      child: _sectionInsurance(),
+                    ),
+                    const SizedBox(height: 12),
+                    _FormSection(
+                      title: 'Observaciones',
+                      subtitle: 'Notas para el equipo médico',
+                      icon: Icons.edit_note_rounded,
+                      color: AppColors.textSecondary,
+                      child: _sectionObservations(),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // ── Save Button ──────────────────────────────────────
+                    _SaveButton(
+                      loading: _loading,
+                      onSave: () => _save(completed: true),
+                      label: onboarding ? 'Guardar y entrar al portal' : 'Guardar historia clínica',
+                    ),
+                    const SizedBox(height: 32),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
-              _sectionPersonal(context),
-              const SizedBox(height: 16),
-              _sectionContact(context),
-              const SizedBox(height: 16),
-              _sectionAntecedents(context),
-              const SizedBox(height: 16),
-              _sectionClinical(context),
-              const SizedBox(height: 16),
-              _sectionInsurance(context),
-              const SizedBox(height: 16),
-              _sectionObservations(context),
-              const SizedBox(height: 28),
-              FilledButton.icon(
-                onPressed: _loading ? null : () => _save(completed: true),
-                icon: _loading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.check_circle_outline),
-                label: Text(onboarding ? 'Guardar y continuar' : 'Guardar historia'),
-              ),
-              if (onboarding) ...[
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _loading
-                      ? null
-                      : () => Navigator.pushReplacementNamed(
-                            context,
-                            AppRoutes.dashboard,
-                          ),
-                  child: const Text('Completar después'),
-                ),
-              ],
-              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -400,275 +425,810 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
     );
   }
 
-  Widget _sectionPersonal(BuildContext context) {
-    return AppPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AppSectionHeader(
-            title: 'Datos personales',
-            subtitle: 'Identificación y datos demográficos.',
+  // ── Section builders ──────────────────────────────────────────────────────
+  Widget _sectionPersonal() {
+    return Column(
+      children: [
+        _CleanField(ctrl: _referredBy, label: 'Referido por', icon: Icons.share_rounded),
+        const SizedBox(height: 12),
+        _TwoCol(
+          left: _CleanField(
+            ctrl: _fullName,
+            label: 'Nombre completo *',
+            icon: Icons.person_outline_rounded,
+            capitalization: TextCapitalization.words,
+            required: true,
           ),
-          const SizedBox(height: 16),
-          _field(_referredBy, 'Referido por', Icons.share),
-          const SizedBox(height: 12),
-          _row(
-            _field(_fullName, 'Nombre y apellido', Icons.badge_outlined,
-                required: true),
-            _field(_documentId, 'C.I.', Icons.credit_card),
-          ),
-          const SizedBox(height: 12),
-          _row(
-            GestureDetector(
-              onTap: _pickBirthDate,
-              child: AbsorbPointer(
-                child: _field(
-                  _birthDate,
-                  'Fecha de nacimiento',
-                  Icons.cake_outlined,
-                  hint: 'Toca para elegir',
-                ),
+          right: _CleanField(ctrl: _documentId, label: 'Cédula / C.I.', icon: Icons.credit_card_rounded),
+        ),
+        const SizedBox(height: 12),
+        _TwoCol(
+          left: GestureDetector(
+            onTap: _pickBirthDate,
+            child: AbsorbPointer(
+              child: _CleanField(
+                ctrl: _birthDate,
+                label: 'Fecha de nacimiento',
+                icon: Icons.cake_rounded,
+                hint: 'Toca para elegir',
               ),
             ),
-            _field(
-              _age,
-              'Edad',
-              Icons.numbers,
-              digitsOnly: true,
-              hint: 'Se calcula al elegir fecha',
-            ),
           ),
-          const SizedBox(height: 12),
-          _row(
-            DropdownButtonFormField<String>(
-              initialValue: _maritalStatus.isEmpty ? null : _maritalStatus,
-              decoration: const InputDecoration(
-                labelText: 'Estado civil',
-                prefixIcon: Icon(Icons.favorite_border),
-              ),
-              items: const [
-                'Soltero/a',
-                'Casado/a',
-                'Unión libre',
-                'Divorciado/a',
-                'Viudo/a',
-              ]
-                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                  .toList(),
-              onChanged: (v) => setState(() => _maritalStatus = v ?? ''),
-            ),
-            _field(_occupation, 'Ocupación', Icons.work_outline),
+          right: _CleanField(
+            ctrl: _age,
+            label: 'Edad',
+            icon: Icons.numbers_rounded,
+            digits: true,
+            hint: 'Auto',
           ),
-          const SizedBox(height: 12),
-          _field(_address, 'Dirección', Icons.home_outlined, maxLines: 2),
-        ],
-      ),
+        ),
+        const SizedBox(height: 12),
+        _TwoCol(
+          left: _DropField(
+            value: _maritalStatus.isEmpty ? null : _maritalStatus,
+            label: 'Estado civil',
+            icon: Icons.favorite_border_rounded,
+            items: const ['Soltero/a', 'Casado/a', 'Unión libre', 'Divorciado/a', 'Viudo/a'],
+            onChanged: (v) => setState(() => _maritalStatus = v ?? ''),
+          ),
+          right: _CleanField(ctrl: _occupation, label: 'Ocupación', icon: Icons.work_outline_rounded),
+        ),
+        const SizedBox(height: 12),
+        _CleanField(
+          ctrl: _address,
+          label: 'Dirección de residencia',
+          icon: Icons.home_outlined,
+          maxLines: 2,
+          capitalization: TextCapitalization.sentences,
+        ),
+      ],
     );
   }
 
-  Widget _sectionContact(BuildContext context) {
-    return AppPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AppSectionHeader(
-            title: 'Información de contacto',
-            subtitle: 'Teléfono, correo y familiar de emergencia.',
+  Widget _sectionContact() {
+    return Column(
+      children: [
+        _TwoCol(
+          left: _CleanField(ctrl: _phone, label: 'Teléfono celular', icon: Icons.phone_android_rounded, phone: true),
+          right: _CleanField(ctrl: _email, label: 'Correo *', icon: Icons.mail_outline_rounded, required: true),
+        ),
+        const SizedBox(height: 16),
+        // Emergency contact header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.emergency.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.emergency.withValues(alpha: 0.2)),
           ),
-          const SizedBox(height: 16),
-          _row(
-            _field(_phone, 'Telf. celular', Icons.phone_android, phone: true),
-            _field(_email, 'Email', Icons.mail_outline, required: true),
+          child: const Row(
+            children: [
+              Icon(Icons.emergency_rounded, color: AppColors.emergency, size: 18),
+              SizedBox(width: 10),
+              Text(
+                'Contacto de emergencia',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: AppColors.emergency,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _row(
-            _field(_emergencyName, 'Nombre de un familiar', Icons.family_restroom),
-            _field(_emergencyPhone, 'Teléfono familiar', Icons.phone, phone: true),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 12),
+        _TwoCol(
+          left: _CleanField(ctrl: _emergencyName, label: 'Nombre familiar', icon: Icons.family_restroom_rounded, capitalization: TextCapitalization.words),
+          right: _CleanField(ctrl: _emergencyPhone, label: 'Teléfono familiar', icon: Icons.phone_outlined, phone: true),
+        ),
+      ],
     );
   }
 
-  Widget _sectionAntecedents(BuildContext context) {
-    return AppPanel(
+  Widget _sectionAntecedents() {
+    return Column(
+      children: [
+        // Condiciones Yes/No
+        _YesNoRow(label: 'Hipertensión', value: _hypertension, onChanged: (v) => setState(() => _hypertension = v)),
+        _YesNoRow(label: 'Diabetes', value: _diabetes, onChanged: (v) => setState(() => _diabetes = v)),
+        _YesNoRow(label: 'Asma bronquial', value: _asthma, onChanged: (v) => setState(() => _asthma = v)),
+        _YesNoRow(label: 'Fumador activo', value: _smoker, onChanged: (v) => setState(() => _smoker = v)),
+        const SizedBox(height: 16),
+        // COVID chips
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'COVID-19',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                _CovidChip(label: 'Sin COVID', value: 'NONE', current: _covidSeverity, onTap: (v) => setState(() => _covidSeverity = v)),
+                _CovidChip(label: 'Leve', value: 'MILD', current: _covidSeverity, onTap: (v) => setState(() => _covidSeverity = v)),
+                _CovidChip(label: 'Moderado', value: 'MODERATE', current: _covidSeverity, onTap: (v) => setState(() => _covidSeverity = v)),
+                _CovidChip(label: 'Grave', value: 'SEVERE', current: _covidSeverity, onTap: (v) => setState(() => _covidSeverity = v)),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _CleanField(ctrl: _vaccines, label: 'Vacunas recibidas', icon: Icons.vaccines_outlined),
+        const SizedBox(height: 12),
+        _CleanField(ctrl: _allergies, label: 'Alergias conocidas', icon: Icons.warning_amber_rounded),
+        const SizedBox(height: 12),
+        _CleanField(ctrl: _surgeries, label: 'Cirugías previas', icon: Icons.local_hospital_outlined),
+        const SizedBox(height: 12),
+        _CleanField(ctrl: _medications, label: 'Medicamentos actuales', icon: Icons.medication_outlined),
+        const SizedBox(height: 12),
+        _CleanField(ctrl: _conditions, label: 'Otras condiciones crónicas', icon: Icons.healing_rounded),
+      ],
+    );
+  }
+
+  Widget _sectionClinical() {
+    final bmiValue = double.tryParse(_bmi.text);
+    String bmiLabel = '';
+    Color bmiColor = AppColors.textSecondary;
+    if (bmiValue != null) {
+      if (bmiValue < 18.5) {
+        bmiLabel = 'Bajo peso';
+        bmiColor = AppColors.info;
+      } else if (bmiValue < 25) {
+        bmiLabel = 'Normal ✓';
+        bmiColor = AppColors.primary;
+      } else if (bmiValue < 30) {
+        bmiLabel = 'Sobrepeso';
+        bmiColor = AppColors.warning;
+      } else {
+        bmiLabel = 'Obesidad';
+        bmiColor = AppColors.emergency;
+      }
+    }
+
+    return Column(
+      children: [
+        _DropField(
+          value: _bloodType,
+          label: 'Tipo de sangre',
+          icon: Icons.bloodtype_rounded,
+          items: const ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'],
+          onChanged: (v) => setState(() => _bloodType = v ?? 'O+'),
+        ),
+        const SizedBox(height: 12),
+        _TwoCol(
+          left: _CleanField(ctrl: _weight, label: 'Peso (kg)', icon: Icons.scale_rounded, keyboard: TextInputType.number, numericDecimal: true),
+          right: _CleanField(ctrl: _height, label: 'Talla (cm)', icon: Icons.height_rounded, keyboard: TextInputType.number, numericDecimal: true, hint: 'Ej. 170'),
+        ),
+        if (_bmi.text.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: bmiColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: bmiColor.withValues(alpha: 0.25)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.calculate_rounded, color: bmiColor, size: 20),
+                const SizedBox(width: 10),
+                Text(
+                  'IMC: ${_bmi.text} kg/m²',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: bmiColor, fontSize: 14),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: bmiColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    bmiLabel,
+                    style: TextStyle(color: bmiColor, fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        _TwoCol(
+          left: _CleanField(ctrl: _obesityType, label: 'Tipo de obesidad', icon: Icons.category_outlined),
+          right: _CleanField(ctrl: _recommendedSurgery, label: 'Cirugía recomendada', icon: Icons.medical_services_outlined),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionInsurance() {
+    return _TwoCol(
+      left: _CleanField(ctrl: _insurance, label: 'Aseguradora', icon: Icons.business_rounded),
+      right: _CleanField(ctrl: _policy, label: 'Número de póliza', icon: Icons.numbers_rounded),
+    );
+  }
+
+  Widget _sectionObservations() {
+    return _CleanField(
+      ctrl: _observations,
+      label: 'Observaciones generales',
+      icon: Icons.edit_note_rounded,
+      maxLines: 5,
+      capitalization: TextCapitalization.sentences,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hero Header
+// ─────────────────────────────────────────────────────────────────────────────
+class _HeroHeader extends StatelessWidget {
+  final bool onboarding;
+  final int filledSections;
+  final int totalSections;
+
+  const _HeroHeader({
+    required this.onboarding,
+    required this.filledSections,
+    required this.totalSections,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = filledSections / totalSections;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF047857), Color(0xFF059669), Color(0xFF10B981)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.35),
+            blurRadius: 30,
+            offset: const Offset(0, 12),
+            spreadRadius: -5,
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const AppSectionHeader(
-            title: 'Antecedentes',
-            subtitle: 'Indica Sí o No para cada condición.',
-          ),
-          const SizedBox(height: 16),
-          _yesNoRow('Hipertensión', _hypertension, (v) => _hypertension = v),
-          _yesNoRow('Diabetes', _diabetes, (v) => _diabetes = v),
-          _yesNoRow('Asma bronquial', _asthma, (v) => _asthma = v),
-          _yesNoRow('Fumador', _smoker, (v) => _smoker = v),
-          const SizedBox(height: 16),
-          Text(
-            'COVID-19',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(14),
                 ),
+                child: const Icon(Icons.assignment_ind_rounded, color: Colors.white, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      onboarding ? '¡Último paso!' : 'Tu historia clínica',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 20,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    Text(
+                      onboarding
+                          ? 'Completa tu expediente para acceder al portal'
+                          : 'Expediente médico personal',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
+          if (onboarding) ...[
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${(progress * 100).round()}% completado',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          backgroundColor: Colors.white.withValues(alpha: 0.25),
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                          minHeight: 7,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$filledSections/$totalSections secciones',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+          // Info chips
           Wrap(
             spacing: 8,
-            children: [
-              _covidChip('Sin COVID', 'NONE'),
-              _covidChip('Leve', 'MILD'),
-              _covidChip('Moderado', 'MODERATE'),
-              _covidChip('Fuerte', 'SEVERE'),
+            runSpacing: 6,
+            children: const [
+              _HeaderChip(icon: Icons.lock_outline_rounded, label: 'Datos protegidos'),
+              _HeaderChip(icon: Icons.local_hospital_rounded, label: 'Uso médico exclusivo'),
+              _HeaderChip(icon: Icons.edit_off_rounded, label: 'Editable siempre'),
             ],
           ),
-          const SizedBox(height: 16),
-          _field(_vaccines, 'Vacunas', Icons.vaccines_outlined),
-          const SizedBox(height: 12),
-          _field(_allergies, 'Alergias', Icons.warning_amber_rounded),
-          const SizedBox(height: 12),
-          _field(_surgeries, 'Cirugías previas', Icons.local_hospital_outlined),
-          const SizedBox(height: 12),
-          _field(_medications, 'Medicamentos actuales', Icons.medication_outlined),
-          const SizedBox(height: 12),
-          _field(_conditions, 'Otras condiciones crónicas', Icons.healing),
         ],
       ),
     );
   }
+}
 
-  Widget _sectionClinical(BuildContext context) {
-    return AppPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AppSectionHeader(
-            title: 'Datos clínicos',
-            subtitle: 'Medidas corporales e información relevante.',
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: _bloodType,
-            decoration: const InputDecoration(
-              labelText: 'Tipo de sangre',
-              prefixIcon: Icon(Icons.bloodtype),
-            ),
-            items: const ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
-                .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                .toList(),
-            onChanged: (v) => setState(() => _bloodType = v ?? 'O+'),
-          ),
-          const SizedBox(height: 12),
-          _row(
-            _field(
-              _weight,
-              'Peso (kg)',
-              Icons.scale,
-              keyboard: TextInputType.number,
-            ),
-            _field(
-              _height,
-              'Talla (cm)',
-              Icons.height,
-              keyboard: TextInputType.number,
-              hint: 'Ej. 170',
-            ),
-          ),
-          const SizedBox(height: 12),
-          _row(
-            _field(_bmi, 'IMC (kg/m²)', Icons.calculate, readOnly: true),
-            _field(_obesityType, 'Tipo de obesidad', Icons.category_outlined),
-          ),
-          const SizedBox(height: 12),
-          _field(
-            _recommendedSurgery,
-            'Cirugía recomendada',
-            Icons.medical_services_outlined,
-          ),
-        ],
+class _HeaderChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _HeaderChip({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
       ),
-    );
-  }
-
-  Widget _sectionInsurance(BuildContext context) {
-    return AppPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AppSectionHeader(
-            title: 'Seguro médico',
-            subtitle: 'Opcional — para facturación y autorizaciones.',
-          ),
-          const SizedBox(height: 16),
-          _row(
-            _field(_insurance, 'Aseguradora', Icons.business),
-            _field(_policy, 'Número de póliza', Icons.numbers),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionObservations(BuildContext context) {
-    return AppPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const AppSectionHeader(
-            title: 'Observaciones',
-            subtitle: 'Notas adicionales para el equipo médico.',
-          ),
-          const SizedBox(height: 16),
-          _field(_observations, 'Observaciones', Icons.edit_note, maxLines: 5),
-        ],
-      ),
-    );
-  }
-
-  Widget _yesNoRow(
-    String label,
-    bool? value,
-    ValueChanged<bool?> onChanged,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w500),
+          Icon(icon, size: 13, color: Colors.white),
+          const SizedBox(width: 5),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Form Section Card (Collapsible)
+// ─────────────────────────────────────────────────────────────────────────────
+class _FormSection extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final Widget child;
+
+  const _FormSection({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.child,
+  });
+
+  @override
+  State<_FormSection> createState() => _FormSectionState();
+}
+
+class _FormSectionState extends State<_FormSection>
+    with SingleTickerProviderStateMixin {
+  bool _expanded = true;
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+      value: 1.0,
+    );
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    if (_expanded) {
+      _ctrl.forward();
+    } else {
+      _ctrl.reverse();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Header
+          InkWell(
+            onTap: _toggle,
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: widget.color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(widget.icon, color: widget.color, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          widget.subtitle,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0 : -0.25,
+                    duration: const Duration(milliseconds: 250),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.textSecondary,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          SegmentedButton<bool?>(
-            segments: const [
-              ButtonSegment(value: true, label: Text('Sí')),
-              ButtonSegment(value: false, label: Text('No')),
-            ],
-            selected: {value},
-            emptySelectionAllowed: true,
-            onSelectionChanged: (s) =>
-                setState(() => onChanged(s.isEmpty ? null : s.first)),
+
+          // Content
+          SizeTransition(
+            sizeFactor: _anim,
+            child: Column(
+              children: [
+                Divider(height: 1, color: AppColors.border.withValues(alpha: 0.5)),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: widget.child,
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _covidChip(String label, String value) {
-    final selected = _covidSeverity == value;
-    return FilterChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => setState(() => _covidSeverity = value),
-      selectedColor: AppColors.primary.withValues(alpha: 0.2),
-      checkmarkColor: AppColors.primary,
+// ─────────────────────────────────────────────────────────────────────────────
+// Save Button
+// ─────────────────────────────────────────────────────────────────────────────
+class _SaveButton extends StatefulWidget {
+  final bool loading;
+  final VoidCallback onSave;
+  final String label;
+
+  const _SaveButton({
+    required this.loading,
+    required this.onSave,
+    required this.label,
+  });
+
+  @override
+  State<_SaveButton> createState() => _SaveButtonState();
+}
+
+class _SaveButtonState extends State<_SaveButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        if (!widget.loading) widget.onSave();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 58,
+          decoration: BoxDecoration(
+            gradient: widget.loading
+                ? null
+                : const LinearGradient(
+                    colors: AppColors.headerGradient,
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+            color: widget.loading ? AppColors.primary.withValues(alpha: 0.4) : null,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: widget.loading
+                ? null
+                : [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: _pressed ? 0.2 : 0.45),
+                      blurRadius: _pressed ? 8 : 24,
+                      offset: Offset(0, _pressed ? 2 : 10),
+                      spreadRadius: _pressed ? -2 : 0,
+                    ),
+                  ],
+          ),
+          child: Center(
+            child: widget.loading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Colors.white, size: 22),
+                      const SizedBox(width: 10),
+                      Text(
+                        widget.label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          letterSpacing: 0.1,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
     );
   }
+}
 
-  Widget _row(Widget left, Widget right) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Clean Field
+// ─────────────────────────────────────────────────────────────────────────────
+class _CleanField extends StatelessWidget {
+  final TextEditingController ctrl;
+  final String label;
+  final String? hint;
+  final IconData icon;
+  final bool required;
+  final bool phone;
+  final bool digits;
+  final bool numericDecimal;
+  final int maxLines;
+  final TextInputType? keyboard;
+  final TextCapitalization capitalization;
+
+  const _CleanField({
+    required this.ctrl,
+    required this.label,
+    required this.icon,
+    this.hint,
+    this.required = false,
+    this.phone = false,
+    this.digits = false,
+    this.numericDecimal = false,
+    this.maxLines = 1,
+    this.keyboard,
+    this.capitalization = TextCapitalization.none,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final inputType = phone
+        ? TextInputType.phone
+        : (digits
+            ? TextInputType.number
+            : keyboard ?? (maxLines > 1 ? TextInputType.multiline : null));
+
+    final formatters = phone || digits
+        ? [FilteringTextInputFormatter.digitsOnly]
+        : numericDecimal
+            ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))]
+            : null;
+
+    return TextFormField(
+      controller: ctrl,
+      maxLines: maxLines,
+      keyboardType: inputType,
+      textCapitalization: capitalization,
+      inputFormatters: formatters,
+      style: const TextStyle(
+        fontSize: 14.5,
+        fontWeight: FontWeight.w500,
+        color: AppColors.textPrimary,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        hintStyle: const TextStyle(color: AppColors.textTertiary, fontSize: 13),
+        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+        prefixIcon: Container(
+          margin: const EdgeInsets.all(10),
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 17),
+        ),
+        filled: true,
+        fillColor: AppColors.surfaceSoft,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.7)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.8),
+        ),
+      ),
+      validator: required
+          ? (v) => (v == null || v.trim().isEmpty) ? 'Campo requerido' : null
+          : null,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drop Field
+// ─────────────────────────────────────────────────────────────────────────────
+class _DropField extends StatelessWidget {
+  final String? value;
+  final String label;
+  final IconData icon;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+
+  const _DropField({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.items,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+        prefixIcon: Container(
+          margin: const EdgeInsets.all(10),
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 17),
+        ),
+        filled: true,
+        fillColor: AppColors.surfaceSoft,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: BorderSide(color: AppColors.border.withValues(alpha: 0.7)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.8),
+        ),
+      ),
+      items: items
+          .map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 14))))
+          .toList(),
+      onChanged: onChanged,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Two Column Layout
+// ─────────────────────────────────────────────────────────────────────────────
+class _TwoCol extends StatelessWidget {
+  final Widget left;
+  final Widget right;
+
+  const _TwoCol({required this.left, required this.right});
+
+  @override
+  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 520) {
+        if (constraints.maxWidth < 480) {
           return Column(
             children: [
               left,
@@ -681,51 +1241,161 @@ class _ClinicalHistoryFormPageState extends State<ClinicalHistoryFormPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(child: left),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(child: right),
           ],
         );
       },
     );
   }
+}
 
-  Widget _field(
-    TextEditingController controller,
-    String label,
-    IconData icon, {
-    bool required = false,
-    bool readOnly = false,
-    bool phone = false,
-    bool digitsOnly = false,
-    String? hint,
-    int maxLines = 1,
-    TextInputType? keyboard,
-  }) {
-    final inputType = phone
-        ? TextInputType.phone
-        : (digitsOnly || keyboard == TextInputType.number
-            ? TextInputType.number
-            : keyboard);
-    final formatters = phone || digitsOnly
-        ? [FilteringTextInputFormatter.digitsOnly]
-        : keyboard == TextInputType.number
-            ? [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))]
-            : null;
+// ─────────────────────────────────────────────────────────────────────────────
+// Yes/No Row
+// ─────────────────────────────────────────────────────────────────────────────
+class _YesNoRow extends StatelessWidget {
+  final String label;
+  final bool? value;
+  final ValueChanged<bool?> onChanged;
 
-    return TextFormField(
-      controller: controller,
-      readOnly: readOnly,
-      maxLines: maxLines,
-      keyboardType: inputType,
-      inputFormatters: formatters,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: Icon(icon),
+  const _YesNoRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              _ToggleBtn(
+                label: 'Sí',
+                selected: value == true,
+                selectedColor: AppColors.primary,
+                onTap: () => onChanged(value == true ? null : true),
+              ),
+              const SizedBox(width: 6),
+              _ToggleBtn(
+                label: 'No',
+                selected: value == false,
+                selectedColor: AppColors.emergency,
+                onTap: () => onChanged(value == false ? null : false),
+              ),
+            ],
+          ),
+        ],
       ),
-      validator: required
-          ? (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null
-          : null,
+    );
+  }
+}
+
+class _ToggleBtn extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color selectedColor;
+  final VoidCallback onTap;
+
+  const _ToggleBtn({
+    required this.label,
+    required this.selected,
+    required this.selectedColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? selectedColor : AppColors.surfaceSoft,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? selectedColor : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: selected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Covid Chip
+// ─────────────────────────────────────────────────────────────────────────────
+class _CovidChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final String current;
+  final ValueChanged<String> onTap;
+
+  const _CovidChip({
+    required this.label,
+    required this.value,
+    required this.current,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = current == value;
+    return GestureDetector(
+      onTap: () => onTap(value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.12)
+              : AppColors.surfaceSoft,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected)
+              const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child: Icon(Icons.check_rounded, size: 13, color: AppColors.primary),
+              ),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: selected ? AppColors.primary : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

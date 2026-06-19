@@ -294,6 +294,16 @@ class _ClinicAdminDashboardState extends State<ClinicAdminDashboard> {
         ),
         const SizedBox(height: 10),
         _actionTile(
+          icon: Icons.personal_injury_rounded,
+          title: 'Gestionar equipos médicos',
+          subtitle: 'Administra el catálogo de alquileres y solicitudes de tu sede',
+          color: Colors.blueAccent,
+          onTap: () {
+            Navigator.pushNamed(context, AppRoutes.clinicEquipmentManagement);
+          },
+        ),
+        const SizedBox(height: 10),
+        _actionTile(
           icon: Icons.lock_rounded,
           title: 'Cambiar contraseña',
           subtitle: 'Actualiza el acceso de tu cuenta de administrador',

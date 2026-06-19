@@ -164,6 +164,7 @@ class EmergencyRequest {
   final int? painLevel;
   final String? medicalHistory;
   final EmergencyStatus status;
+  final String? paymentMethod;
   final double? quotedCost;
   final int? etaMinutes;
   final GeoPoint? ambulanceLocation;
@@ -181,6 +182,7 @@ class EmergencyRequest {
     this.painLevel,
     this.medicalHistory,
     required this.status,
+    this.paymentMethod,
     this.quotedCost,
     this.etaMinutes,
     this.ambulanceLocation,
@@ -207,6 +209,7 @@ class EmergencyRequest {
       painLevel: json['painLevel'] as int?,
       medicalHistory: json['medicalHistory'] as String?,
       status: EmergencyStatus.fromApi(json['status'] as String? ?? 'REQUESTED'),
+      paymentMethod: json['paymentMethod'] as String?,
       quotedCost: JsonHelpers.doubleFromJson(json['quotedCost']),
       etaMinutes: json['etaMinutes'] as int?,
       ambulanceLocation: _optionalPoint(json['ambulanceLat'], json['ambulanceLng']),
@@ -238,6 +241,7 @@ class EmergencyRequest {
       painLevel: painLevel,
       medicalHistory: medicalHistory,
       status: status ?? this.status,
+      paymentMethod: paymentMethod,
       quotedCost: quotedCost,
       etaMinutes: etaMinutes ?? this.etaMinutes,
       ambulanceLocation: ambulanceLocation ?? this.ambulanceLocation,
@@ -276,6 +280,7 @@ class CreateEmergencyParams {
   final String? symptoms;
   final int? painLevel;
   final String? medicalHistory;
+  final String? paymentMethod;
 
   const CreateEmergencyParams({
     required this.facilityId,
@@ -284,5 +289,6 @@ class CreateEmergencyParams {
     this.symptoms,
     this.painLevel,
     this.medicalHistory,
+    this.paymentMethod,
   });
 }

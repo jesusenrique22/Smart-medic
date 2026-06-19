@@ -158,7 +158,16 @@ class _ClinicBillingDashboardState extends State<ClinicBillingDashboard> {
       ),
       child: Row(
         children: [
-          Image.network(insurance.logoUrl, height: 30, width: 30),
+          Image.network(
+            insurance.logoUrl,
+            height: 30,
+            width: 30,
+            errorBuilder: (context, error, stackTrace) => const Icon(
+              Icons.shield,
+              color: Colors.blue,
+              size: 30,
+            ),
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(

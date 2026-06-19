@@ -1,0 +1,37 @@
+ESPECIALIDADES MÉDICAS - SMART MEDIC
+====================================
+
+Listado de las 32 especialidades médicas más comunes configuradas y sembradas en la base de datos de Smart Medic:
+
+1. Cardiología - Enfermedades del corazón
+2. Medicina General - Atención primaria
+3. Dermatología - Piel y anexos
+4. Pediatría - Salud infantil
+5. Ginecología y Obstetricia - Salud de la mujer y embarazo
+6. Traumatología y Ortopedia - Lesiones y enfermedades de huesos y articulaciones
+7. Oftalmología - Salud ocular y visión
+8. Otorrinolaringología - Enfermedades de oído, nariz y garganta
+9. Neurología - Sistema nervioso y cerebro
+10. Gastroenterología - Sistema digestivo y estómago
+11. Urología - Sistema urinario y aparato reproductor masculino
+12. Psiquiatría - Salud mental y trastornos emocionales
+13. Neumología - Vías respiratorias y pulmones
+14. Endocrinología - Hormonas, metabolismo y diabetes
+15. Oncología Médica - Prevención y tratamiento del cáncer
+16. Nutrición Clínica - Alimentación, dieta y control metabólico
+17. Alergología e Inmunología - Alergias y sistema inmunológico
+18. Nefrología - Enfermedades y función de los riñones
+19. Hematología - Trastornos de la sangre
+20. Reumatología - Enfermedades autoinmunes y de articulaciones
+21. Infectología - Enfermedades infecciosas y virus
+22. Cirugía General - Procedimientos quirúrgicos generales
+23. Anestesiología - Control del dolor y anestesia para procedimientos
+24. Medicina Interna - Atención integral del adulto y enfermedades complejas
+25. Odontología y Estomatología - Salud dental y bucal
+26. Fisioterapia y Rehabilitación - Terapia física y recuperación motora
+27. Geriatría - Salud y cuidado del adulto mayor
+28. Medicina Estética - Tratamientos estéticos no invasivos
+29. Radiología y Diagnóstico - Imágenes médicas (Rayos X, resonancias, ecografías)
+30. Cardiología Infantil - Enfermedades cardíacas en niños
+31. Medicina del Deporte - Lesiones deportivas y rendimiento físico
+32. Psicología Clínica - Psicoterapia y orientación mental

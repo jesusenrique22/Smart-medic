@@ -1,4 +1,5 @@
 export 'auth/presentation/pages/login_page.dart';
+export 'auth/presentation/pages/register_page.dart';
 export 'patient_profile/presentation/pages/patient_profile_page.dart';
 export 'patient_profile/presentation/pages/clinical_history_form_page.dart';
 export 'dashboard/presentation/pages/patient_dashboard.dart';
@@ -46,3 +47,8 @@ export 'radiology/presentation/pages/radiology_marketplace_screen.dart';
 export 'insurance/presentation/pages/insurance_wallet_screen.dart';
 export 'doctor/presentation/pages/doctor_schedule_page.dart';
 export 'doctor/presentation/pages/doctor_profile_page.dart';
+export 'equipment_rental/presentation/pages/equipment_marketplace_screen.dart';
+export 'equipment_rental/presentation/pages/equipment_detail_screen.dart';
+export 'equipment_rental/presentation/pages/equipment_checkout_screen.dart';
+export 'equipment_rental/presentation/pages/my_rentals_screen.dart';
+export 'admin/presentation/pages/clinic_equipment_management_page.dart';

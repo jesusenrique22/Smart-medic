@@ -5,6 +5,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/responsive_scaffold.dart';
 import '../../domain/models/laboratory_models.dart';
 import '../../domain/models/lab_data_mock.dart';
+import '../../../../core/auth/app_session.dart';
+import '../../domain/services/lab_workflow_service.dart';
 
 class LabDetailScreen extends StatefulWidget {
   final Laboratory laboratory;
@@ -20,9 +22,11 @@ class _LabDetailScreenState extends State<LabDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final labServices = LabDataMock.services
-        .where((s) => s.laboratoryId == widget.laboratory.id)
-        .toList();
+    final labServices = widget.laboratory.services.isNotEmpty
+        ? widget.laboratory.services
+        : LabDataMock.services
+            .where((s) => s.laboratoryId == widget.laboratory.id)
+            .toList();
 
     return ResponsiveScaffold(
       backgroundColor: AppColors.background,
@@ -82,7 +86,18 @@ class _LabDetailScreenState extends State<LabDetailScreen> {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(widget.laboratory.logoUrl, fit: BoxFit.cover),
+            Image.network(
+              widget.laboratory.logoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: AppColors.primaryLight,
+                child: const Icon(
+                  Icons.science_rounded,
+                  color: AppColors.primary,
+                  size: 48,
+                ),
+              ),
+            ),
             Container(color: Colors.black.withValues(alpha: 0.4)),
           ],
         ),
@@ -235,6 +250,16 @@ class _LabDetailScreenState extends State<LabDetailScreen> {
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
+              final activeUser = AppSession.currentUser;
+              for (final service in _selectedServices) {
+                LabWorkflowService.instance.register(
+                  patientName: activeUser?.name ?? 'Juan Pérez',
+                  patientDocument: 'V-12.345.678', // Documento demo
+                  patientPhone: activeUser?.phone ?? '+58 412-000-0044',
+                  examId: service.id,
+                  clinicalNotes: 'Reserva vía aplicación móvil',
+                );
+              }
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Reserva de Laboratorio procesada con éxito'),

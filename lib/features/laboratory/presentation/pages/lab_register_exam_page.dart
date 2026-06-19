@@ -22,9 +22,11 @@ class LabRegisterExamPage extends StatefulWidget {
 class _LabRegisterExamPageState extends State<LabRegisterExamPage> {
   final _nameController = TextEditingController();
   final _docController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _notesController = TextEditingController();
   LabExamDefinition? _selected;
   LabSampleType? _categoryFilter;
+  bool _isUrgent = false;
 
   @override
   void initState() {
@@ -37,6 +39,7 @@ class _LabRegisterExamPageState extends State<LabRegisterExamPage> {
   void dispose() {
     _nameController.dispose();
     _docController.dispose();
+    _phoneController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -64,10 +67,14 @@ class _LabRegisterExamPageState extends State<LabRegisterExamPage> {
       patientDocument: _docController.text.trim().isEmpty
           ? null
           : _docController.text.trim(),
+      patientPhone: _phoneController.text.trim().isEmpty
+          ? null
+          : _phoneController.text.trim(),
       examId: _selected!.id,
       clinicalNotes: _notesController.text.trim().isEmpty
           ? null
           : _notesController.text.trim(),
+      isUrgent: _isUrgent,
     );
 
     if (!mounted) return;
@@ -126,6 +133,15 @@ class _LabRegisterExamPageState extends State<LabRegisterExamPage> {
               decoration: const InputDecoration(
                 labelText: 'Documento / cédula',
                 prefixIcon: Icon(Icons.badge_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Teléfono del paciente',
+                prefixIcon: Icon(Icons.phone_outlined),
               ),
             ),
             const SizedBox(height: 12),
@@ -193,7 +209,23 @@ class _LabRegisterExamPageState extends State<LabRegisterExamPage> {
               const SizedBox(height: 16),
               _PreparationCard(exam: selected),
             ],
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
+            CheckboxListTile(
+              title: const Text(
+                'Marcar como prioridad urgente (STAT)',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red),
+              ),
+              subtitle: const Text(
+                'Destaca esta orden en el panel para procesamiento prioritario',
+                style: TextStyle(fontSize: 12),
+              ),
+              value: _isUrgent,
+              activeColor: Colors.red.shade700,
+              onChanged: (val) => setState(() => _isUrgent = val ?? false),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+            ),
+            const SizedBox(height: 24),
             FilledButton(
               onPressed: _submit,
               style: FilledButton.styleFrom(

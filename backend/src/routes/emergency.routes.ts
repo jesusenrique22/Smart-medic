@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import {
+  acceptEmergency,
   cancelEmergency,
   getEmergency,
   getEmergencyChatMessages,
+  getPendingRequests,
   listClinicAmbulances,
   listMyEmergencies,
   patchClinicAmbulance,
@@ -21,6 +23,11 @@ router.use(authenticate);
 
 router.post('/', authorize(UserRole.PATIENT), postEmergency);
 router.get('/mine', listMyEmergencies);
+router.get(
+  '/pending',
+  authorize(UserRole.AMBULANCE_DRIVER, UserRole.PARAMEDIC, UserRole.AMBULANCE_NURSE),
+  getPendingRequests,
+);
 
 router.get(
   '/clinic/ambulances',
@@ -40,6 +47,7 @@ router.patch(
 
 router.get('/:id', getEmergency);
 router.patch('/:id/status', patchEmergencyStatus);
+router.patch('/:id/accept', authorize(UserRole.AMBULANCE_DRIVER, UserRole.PARAMEDIC, UserRole.AMBULANCE_NURSE), acceptEmergency);
 router.patch('/:id/location', authorize(UserRole.AMBULANCE_DRIVER), patchEmergencyLocation);
 router.post('/:id/cancel', authorize(UserRole.PATIENT), cancelEmergency);
 router.get('/:id/messages', getEmergencyChatMessages);

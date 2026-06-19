@@ -6,6 +6,9 @@ abstract class EmergencyRepository {
   Future<EmergencyRequest> getById(String id);
   Future<EmergencyRequest> cancel(String id);
   Future<List<EmergencyRequest>> listMine();
+  Future<List<EmergencyRequest>> getPendingRequests();
+  Future<EmergencyRequest> acceptEmergency(String id);
+  Future<EmergencyRequest> updateStatus(String id, EmergencyStatus status);
   Future<void> updateDriverLocation({
     required String emergencyId,
     required GeoPoint location,

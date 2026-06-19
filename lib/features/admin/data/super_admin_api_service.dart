@@ -292,6 +292,7 @@ class SuperAdminApiService {
     required String address,
     String? phone,
     String? logoUrl,
+    List<Map<String, dynamic>>? services,
   }) async {
     final data = await _client.post(
       '/api/super-admin/laboratories',
@@ -300,6 +301,7 @@ class SuperAdminApiService {
         'address': address.trim(),
         if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
         if (logoUrl != null && logoUrl.trim().isNotEmpty) 'logoUrl': logoUrl.trim(),
+        if (services != null) 'services': services,
       },
       auth: true,
     );

@@ -15,20 +15,27 @@ class AmbulanceEmergencyMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final origin = request.origin;
+    final showClinicDestination = request.status == EmergencyStatus.patientOnboard ||
+        request.status == EmergencyStatus.enRoute ||
+        request.status == EmergencyStatus.arrived;
+
+    final destination = showClinicDestination && request.facility?.location != null
+        ? request.facility!.location!
+        : request.origin;
+
     final ambulance = request.ambulanceLocation;
     final center = ambulance != null
-        ? GeoMath.midpoint(origin, ambulance)
-        : origin;
+        ? GeoMath.midpoint(destination, ambulance)
+        : destination;
 
-    final originStyle = MapPoiStyle.forType('PATIENT');
+    final destinationStyle = MapPoiStyle.forType(showClinicDestination ? 'CLINIC' : 'PATIENT');
     final ambulanceStyle = MapPoiStyle.forType('AMBULANCE');
 
     final markers = <Marker>[
       MapIconMarker(
-        point: origin.latLng,
-        icon: originStyle.icon,
-        color: originStyle.color,
+        point: destination.latLng,
+        icon: destinationStyle.icon,
+        color: destinationStyle.color,
         size: 40,
       ).toMarker(width: 50, height: 50),
     ];
@@ -69,12 +76,12 @@ class AmbulanceEmergencyMap extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  Icon(originStyle.icon, color: originStyle.color, size: 20),
+                  Icon(destinationStyle.icon, color: destinationStyle.color, size: 20),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Ubicación de la solicitud',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      showClinicDestination ? 'Ruta a: ${request.facility?.name ?? 'Clínica'}' : 'Ruta al Paciente',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                   if (ambulance != null) ...[

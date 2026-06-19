@@ -64,14 +64,65 @@ class _ResponsiveScaffoldState extends State<ResponsiveScaffold> {
         : const _AccessDeniedView();
 
     // Optional AppBar.
+    final List<Widget> resolvedActions = widget.actions != null ? List.from(widget.actions!) : [];
+    if (AppSession.activeRole == Role.patient &&
+        !widget.hideNavigation &&
+        currentRoute != AppRoutes.ambulanceCheckout &&
+        currentRoute != AppRoutes.videoCall &&
+        currentRoute != AppRoutes.tracking) {
+      resolvedActions.add(
+        Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: Center(
+            child: GestureDetector(
+              onTap: () => _navigateTo(AppRoutes.ambulanceCheckout),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.emergency,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.emergency.withValues(alpha: 0.35),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.emergency_rounded,
+                      color: Colors.white,
+                      size: 13,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'SOS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final PreferredSizeWidget? resolvedAppBar = widget.hideAppBar
         ? null
         : widget.appBar ??
-            ((widget.title != null || widget.actions != null)
-                ? AppBar(title: widget.title, actions: widget.actions)
-                : widget.hideNavigation
-                ? null
-                : AppBar(title: Text(AppRoutes.titleFor(currentRoute))));
+            AppBar(
+              title: widget.title ?? (widget.hideNavigation ? null : Text(AppRoutes.titleFor(currentRoute))),
+              actions: resolvedActions.isEmpty ? null : resolvedActions,
+            );
 
     // Full‑screen pages – hide navigation.
     if (widget.hideNavigation) {
@@ -233,26 +284,7 @@ class _ResponsiveScaffoldState extends State<ResponsiveScaffold> {
   }
 
   Widget? _resolveEmergencyFab(String currentRoute) {
-    if (widget.floatingActionButton != null) return widget.floatingActionButton;
-    if (widget.hideNavigation) return null;
-    if (AppSession.activeRole != Role.patient) return null;
-    if (currentRoute == AppRoutes.videoCall ||
-        currentRoute == AppRoutes.ambulanceCheckout ||
-        currentRoute == AppRoutes.tracking) {
-      return null;
-    }
-
-    return FloatingActionButton.extended(
-      onPressed: () => _navigateTo(AppRoutes.ambulanceCheckout),
-      backgroundColor: AppColors.emergency,
-      foregroundColor: Colors.white,
-      elevation: 6,
-      icon: const Icon(Icons.emergency_rounded),
-      label: const Text(
-        'Emergencia',
-        style: TextStyle(fontWeight: FontWeight.w800),
-      ),
-    );
+    return widget.floatingActionButton;
   }
 }
 

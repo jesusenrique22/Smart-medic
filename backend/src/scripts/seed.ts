@@ -30,6 +30,8 @@ Pide explícitamente al agente o añade --yes cuando tú lo decidas.
 
 async function clearDatabase() {
   await prisma.$transaction([
+    prisma.equipmentRental.deleteMany(),
+    prisma.medicalEquipment.deleteMany(),
     prisma.transitMedicalLog.deleteMany(),
     prisma.emergencyChatMessage.deleteMany(),
     prisma.emergencyRequest.deleteMany(),
@@ -142,6 +144,34 @@ async function seed() {
     ensureSpecialty('Medicina General', 'Atención primaria'),
     ensureSpecialty('Dermatología', 'Piel y anexos'),
     ensureSpecialty('Pediatría', 'Salud infantil'),
+    ensureSpecialty('Ginecología y Obstetricia', 'Salud de la mujer y embarazo'),
+    ensureSpecialty('Traumatología y Ortopedia', 'Lesiones y enfermedades de huesos y articulaciones'),
+    ensureSpecialty('Oftalmología', 'Salud ocular y visión'),
+    ensureSpecialty('Otorrinolaringología', 'Enfermedades de oído, nariz y garganta'),
+    ensureSpecialty('Neurología', 'Sistema nervioso y cerebro'),
+    ensureSpecialty('Gastroenterología', 'Sistema digestivo y estómago'),
+    ensureSpecialty('Urología', 'Sistema urinario y aparato reproductor masculino'),
+    ensureSpecialty('Psiquiatría', 'Salud mental y trastornos emocionales'),
+    ensureSpecialty('Neumología', 'Vías respiratorias y pulmones'),
+    ensureSpecialty('Endocrinología', 'Hormonas, metabolismo y diabetes'),
+    ensureSpecialty('Oncología Médica', 'Prevención y tratamiento del cáncer'),
+    ensureSpecialty('Nutrición Clínica', 'Alimentación, dieta y control metabólico'),
+    ensureSpecialty('Alergología e Inmunología', 'Alergias y sistema inmunológico'),
+    ensureSpecialty('Nefrología', 'Enfermedades y función de los riñones'),
+    ensureSpecialty('Hematología', 'Trastornos de la sangre'),
+    ensureSpecialty('Reumatología', 'Enfermedades autoinmunes y de articulaciones'),
+    ensureSpecialty('Infectología', 'Enfermedades infecciosas y virus'),
+    ensureSpecialty('Cirugía General', 'Procedimientos quirúrgicos generales'),
+    ensureSpecialty('Anestesiología', 'Control del dolor y anestesia para procedimientos'),
+    ensureSpecialty('Medicina Interna', 'Atención integral del adulto y enfermedades complejas'),
+    ensureSpecialty('Odontología y Estomatología', 'Salud dental y bucal'),
+    ensureSpecialty('Fisioterapia y Rehabilitación', 'Terapia física y recuperación motora'),
+    ensureSpecialty('Geriatría', 'Salud y cuidado del adulto mayor'),
+    ensureSpecialty('Medicina Estética', 'Tratamientos estéticos no invasivos'),
+    ensureSpecialty('Radiología y Diagnóstico', 'Imágenes médicas (Rayos X, resonancias, ecografías)'),
+    ensureSpecialty('Cardiología Infantil', 'Enfermedades cardíacas en niños'),
+    ensureSpecialty('Medicina del Deporte', 'Lesiones deportivas y rendimiento físico'),
+    ensureSpecialty('Psicología Clínica', 'Psicoterapia y orientación mental'),
   ]);
 
   const facilities = await Promise.all([
@@ -349,7 +379,7 @@ async function seed() {
       latitude: 10.478,
       longitude: -66.905,
       logoUrl:
-        'https://images.unsplash.com/photo-1579152276508-2d29944ef71d?auto=format&fit=crop&q=80&w=100',
+        'https://images.unsplash.com/photo-1532187643603-ba119ca4109e?auto=format&fit=crop&q=80&w=600',
     }),
     ensureLaboratory({
       name: 'Lab Diagnóstico VITA',
@@ -640,6 +670,55 @@ async function seed() {
         lastChatMessage: 'Buenos días doctor, tengo una consulta sobre mi medicación.',
         lastChatMessageAt: new Date(),
       },
+    });
+  }
+
+  // Seed medical equipment
+  const equipmentCount = await prisma.medicalEquipment.count();
+  if (equipmentCount === 0) {
+    await prisma.medicalEquipment.createMany({
+      data: [
+        {
+          facilityId: facilities[0].id,
+          name: 'Silla de Ruedas Ergonómica',
+          description: 'Silla de ruedas ajustable, plegable y liviana con frenos de mano y tapicería lavable.',
+          pricePerDay: 12.0,
+          stock: 5,
+          imageUrl: 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?auto=format&fit=crop&q=80&w=200',
+        },
+        {
+          facilityId: facilities[0].id,
+          name: 'Concentrador de Oxígeno 5L',
+          description: 'Concentrador de oxígeno portátil de flujo continuo hasta 5 litros por minuto, ideal para terapias respiratorias en casa.',
+          pricePerDay: 35.0,
+          stock: 3,
+          imageUrl: 'https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?auto=format&fit=crop&q=80&w=200',
+        },
+        {
+          facilityId: facilities[0].id,
+          name: 'Muletas de Aluminio (Par)',
+          description: 'Muletas de aluminio regulables en altura con almohadillas axilares de goma suave para mayor soporte.',
+          pricePerDay: 4.5,
+          stock: 10,
+          imageUrl: 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&q=80&w=200',
+        },
+        {
+          facilityId: facilities[1].id,
+          name: 'Cama Clínica Eléctrica de 3 Funciones',
+          description: 'Cama hospitalaria eléctrica con inclinación de cabecera, piecera y altura regulable. Incluye colchón clínico.',
+          pricePerDay: 45.0,
+          stock: 2,
+          imageUrl: 'https://images.unsplash.com/photo-1516549655169-df83a0774514?auto=format&fit=crop&q=80&w=200',
+        },
+        {
+          facilityId: facilities[1].id,
+          name: 'Nebulizador Compresor Portátil',
+          description: 'Nebulizador de compresor de alta eficiencia para la administración rápida de medicamentos respiratorios.',
+          pricePerDay: 7.0,
+          stock: 6,
+          imageUrl: 'https://images.unsplash.com/photo-1584515980126-de26e84d47c3?auto=format&fit=crop&q=80&w=200',
+        },
+      ],
     });
   }
 

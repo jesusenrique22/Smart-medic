@@ -66,6 +66,8 @@ class ChatSocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   final _emergencyLocationController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final _emergencyIncomingController =
+      StreamController<Map<String, dynamic>>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
 
   Stream<Map<String, dynamic>> get onMessage => _messageController.stream;
@@ -81,6 +83,8 @@ class ChatSocketService {
       _emergencyUpdatedController.stream;
   Stream<Map<String, dynamic>> get onEmergencyLocation =>
       _emergencyLocationController.stream;
+  Stream<Map<String, dynamic>> get onEmergencyIncoming =>
+      _emergencyIncomingController.stream;
 
   bool get isConnected => _socket?.connected ?? false;
 
@@ -325,6 +329,12 @@ class ChatSocketService {
       ..on('emergency:assigned', (data) {
         if (data is Map) {
           _emergencyUpdatedController.add(Map<String, dynamic>.from(data));
+        }
+      })
+      ..on('emergency:incoming', (data) {
+        if (data is Map) {
+          developer.log('emergency:incoming recibido', name: 'ChatSocket');
+          _emergencyIncomingController.add(Map<String, dynamic>.from(data));
         }
       });
 

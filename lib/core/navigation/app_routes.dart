@@ -21,6 +21,7 @@ class AppRouteDestination {
 /// Centralized route definitions
 class AppRoutes {
   static const String login = '/login';
+  static const String register = '/register';
   static const String patientProfile = '/patient_profile';
   static const String clinicalHistory = '/clinical_history';
   static const String messages = '/messages';
@@ -67,6 +68,9 @@ class AppRoutes {
   static const String insuranceWallet = '/insurance_wallet';
   static const String clinicBilling = '/clinic_billing';
   static const String radiologyMarketplace = '/radiology_marketplace';
+  static const String clinicEquipmentManagement = '/clinic_admin/equipment';
+  static const String equipmentMarketplace = '/equipment_rental/marketplace';
+  static const String myRentals = '/equipment_rental/my_rentals';
 
   // Backwards-compatible aliases used by older mock notifications.
   static const String erIncomingAlias = '/er_incoming';
@@ -454,6 +458,8 @@ class AppRoutes {
     ambulanceCheckout,
     tracking,
     clinicalHistory,
+    equipmentMarketplace,
+    myRentals,
   };
 
   /// Resuelve la ruta de pestaña activa para resaltar la navegación inferior.
@@ -503,6 +509,9 @@ class AppRoutes {
     messages: {Role.patient, Role.doctor},
     videoCall: {Role.patient, Role.doctor},
     labRegisterExam: {Role.labTech},
+    clinicEquipmentManagement: {Role.clinicAdmin},
+    equipmentMarketplace: {Role.patient},
+    myRentals: {Role.patient},
   };
 
   static bool isAllowedForRole(String? route, Role role) {
@@ -573,6 +582,7 @@ class AppRoutes {
 
   static Map<String, WidgetBuilder> get routes => {
     login: (_) => const LoginPage(),
+    register: (_) => const RegisterPage(),
     dashboard: (_) => const PatientDashboard(),
     healthServices: (_) => const HealthServicesHub(),
     patientProfile: (_) => const PatientProfilePage(),
@@ -645,6 +655,9 @@ class AppRoutes {
     insuranceWallet: (_) => const InsuranceWalletScreen(),
     clinicBilling: (_) => const ClinicBillingDashboard(),
     radiologyMarketplace: (_) => const RadiologyMarketplaceScreen(),
+    clinicEquipmentManagement: (_) => const ClinicEquipmentManagementPage(),
+    equipmentMarketplace: (_) => const EquipmentMarketplaceScreen(),
+    myRentals: (_) => const MyRentalsScreen(),
     erIncomingAlias: (_) => const ERIncomingDashboard(),
     ambulanceDriverAlias: (_) => const AmbulanceCrewDashboard(),
   };

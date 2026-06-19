@@ -29,6 +29,9 @@ class AuthApiService {
     required String name,
     required String roleApi,
     String? phone,
+    String? address,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
   }) async {
     final data = await _client.post('/api/auth/register', {
       'email': email.trim(),
@@ -36,6 +39,11 @@ class AuthApiService {
       'name': name.trim(),
       'role': roleApi,
       if (phone != null && phone.isNotEmpty) 'phone': phone.trim(),
+      if (address != null && address.isNotEmpty) 'address': address.trim(),
+      if (emergencyContactName != null && emergencyContactName.isNotEmpty)
+        'emergencyContactName': emergencyContactName.trim(),
+      if (emergencyContactPhone != null && emergencyContactPhone.isNotEmpty)
+        'emergencyContactPhone': emergencyContactPhone.trim(),
     });
     return _parseAuthResponse(data);
   }

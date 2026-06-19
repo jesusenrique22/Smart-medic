@@ -29,6 +29,23 @@ class EmergencyRemoteDataSource {
     return (data as List).cast<Map<String, dynamic>>();
   }
 
+  Future<List<Map<String, dynamic>>> getPending() async {
+    final data = await _client.get('/api/emergencies/pending', auth: true);
+    return (data as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> accept(String id) async {
+    return JsonHelpers.asMap(
+      await _client.patch('/api/emergencies/$id/accept', {}, auth: true),
+    );
+  }
+
+  Future<Map<String, dynamic>> updateStatus(String id, String status) async {
+    return JsonHelpers.asMap(
+      await _client.patch('/api/emergencies/$id/status', {'status': status}, auth: true),
+    );
+  }
+
   Future<void> patchLocation(
     String id, {
     required double latitude,
@@ -40,7 +57,7 @@ class EmergencyRemoteDataSource {
       {
         'latitude': latitude,
         'longitude': longitude,
-        'etaMinutes': ?etaMinutes,
+        'etaMinutes': etaMinutes,
       },
       auth: true,
     );

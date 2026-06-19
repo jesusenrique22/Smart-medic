@@ -44,6 +44,7 @@ model User {
   historyEntries      MedicalHistoryEntry[]
   medicalDocuments    PatientMedicalDocument[]
   pharmacyOrders      PharmacyOrder[]
+  equipmentRentals    EquipmentRental[] @relation("PatientRentals")
   consultationTemplates DoctorConsultationTemplate[]
   ambulanceUnitsAsDriver    AmbulanceUnit[] @relation("AmbulanceDriver")
   ambulanceUnitsAsParamedic AmbulanceUnit[] @relation("AmbulanceParamedic")
@@ -208,6 +209,8 @@ model MedicalFacility {
   invitations       ClinicInvitation[]
   ambulanceUnits    AmbulanceUnit[]
   emergencyRequests EmergencyRequest[]
+  equipments        MedicalEquipment[]
+  equipmentRentals  EquipmentRental[]
 
   @@map("medical_facilities")
 }
@@ -469,8 +472,23 @@ model Laboratory {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   staff User[]
+  services LaboratoryService[]
 
   @@map("laboratories")
+}
+
+model LaboratoryService {
+  id           String   @id @default(cuid())
+  laboratoryId String   @map("laboratory_id")
+  name         String
+  price        Float
+  requirements String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  laboratory Laboratory @relation(fields: [laboratoryId], references: [id], onDelete: Cascade)
+
+  @@map("laboratory_services")
 }
 
 model AmbulanceUnit {
@@ -525,6 +543,7 @@ model EmergencyRequest {
   painLevel       Int?      @map("pain_level")
   medicalHistory  String?   @map("medical_history")
   status          String    @default("REQUESTED")
+  paymentMethod   String?   @default("CASH") @map("payment_method")
   quotedCost      Float?    @map("quoted_cost")
   etaMinutes      Int?      @map("eta_minutes")
   ambulanceLat    Float?    @map("ambulance_lat")
@@ -614,4 +633,43 @@ model PharmacyOrder {
 
   @@index([pharmacyId, createdAt(sort: Desc)])
   @@map("pharmacy_orders")
+}
+
+model MedicalEquipment {
+  id           String   @id @default(cuid())
+  facilityId   String   @map("facility_id")
+  name         String
+  description  String?
+  pricePerDay  Float    @map("price_per_day")
+  stock        Int      @default(1)
+  imageUrl     String?  @map("image_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  facility     MedicalFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  rentals      EquipmentRental[]
+
+  @@map("medical_equipments")
+}
+
+model EquipmentRental {
+  id          String   @id @default(cuid())
+  patientId   String   @map("patient_id")
+  equipmentId String   @map("equipment_id")
+  facilityId  String   @map("facility_id")
+  startDate   DateTime @map("start_date")
+  endDate     DateTime @map("end_date")
+  totalPrice  Float    @map("total_price")
+  status      String   @default("PENDING") // PENDING, ACTIVE, COMPLETED, CANCELLED
+  address     String
+  phone       String
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  patient     User             @relation("PatientRentals", fields: [patientId], references: [id])
+  equipment   MedicalEquipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  facility    MedicalFacility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@map("equipment_rentals")
 }

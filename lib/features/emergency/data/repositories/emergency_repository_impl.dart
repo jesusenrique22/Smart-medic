@@ -20,6 +20,8 @@ class EmergencyRepositoryImpl implements EmergencyRepository {
       if (params.painLevel != null) 'painLevel': params.painLevel,
       if (params.medicalHistory?.isNotEmpty == true)
         'medicalHistory': params.medicalHistory,
+      if (params.paymentMethod?.isNotEmpty == true)
+        'paymentMethod': params.paymentMethod,
     });
     return EmergencyRequest.fromJson(json);
   }
@@ -38,6 +40,22 @@ class EmergencyRepositoryImpl implements EmergencyRepository {
   Future<List<EmergencyRequest>> listMine() async {
     final rows = await _remote.listMine();
     return rows.map(EmergencyRequest.fromJson).toList();
+  }
+
+  @override
+  Future<List<EmergencyRequest>> getPendingRequests() async {
+    final rows = await _remote.getPending();
+    return rows.map(EmergencyRequest.fromJson).toList();
+  }
+
+  @override
+  Future<EmergencyRequest> acceptEmergency(String id) async {
+    return EmergencyRequest.fromJson(await _remote.accept(id));
+  }
+
+  @override
+  Future<EmergencyRequest> updateStatus(String id, EmergencyStatus status) async {
+    return EmergencyRequest.fromJson(await _remote.updateStatus(id, status.apiValue));
   }
 
   @override

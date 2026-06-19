@@ -154,12 +154,15 @@ export const listPharmacies = async (_req: AuthRequest, res: Response) => {
 };
 
 export const listLaboratories = async (_req: AuthRequest, res: Response) => {
-  const laboratories = await prisma.laboratory.findMany({ orderBy: { name: 'asc' } });
+  const laboratories = await prisma.laboratory.findMany({
+    include: { services: true },
+    orderBy: { name: 'asc' },
+  });
   res.json(laboratories.map(toApiDoc));
 };
 
 export const createLaboratory = async (req: AuthRequest, res: Response) => {
-  const { name, address, phone, logoUrl } = req.body;
+  const { name, address, phone, logoUrl, services } = req.body;
 
   if (!name?.trim()) {
     return res.status(400).json({ error: 'El nombre del laboratorio es obligatorio' });
@@ -175,6 +178,14 @@ export const createLaboratory = async (req: AuthRequest, res: Response) => {
     return res.status(409).json({ error: 'Ya existe un laboratorio con ese nombre' });
   }
 
+  const servicesData = Array.isArray(services)
+    ? services.map((s: any) => ({
+        name: String(s.name || '').trim(),
+        price: Number(s.price || 0),
+        requirements: String(s.requirements || '').trim(),
+      }))
+    : [];
+
   const laboratory = await prisma.laboratory.create({
     data: {
       name: name.trim(),
@@ -183,6 +194,12 @@ export const createLaboratory = async (req: AuthRequest, res: Response) => {
       logoUrl: logoUrl?.trim() || undefined,
       isActive: true,
       serviceEnabled: true,
+      services: {
+        create: servicesData,
+      },
+    },
+    include: {
+      services: true,
     },
   });
 

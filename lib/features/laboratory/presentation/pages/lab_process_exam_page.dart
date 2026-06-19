@@ -81,6 +81,33 @@ class _LabProcessExamPageState extends State<LabProcessExamPage> {
           children: [
             _StatusBanner(status: order.status),
             const SizedBox(height: 16),
+            if (order.isUrgent) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.shade300, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.red.shade800),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'ATENCIÓN: Prioridad Urgente (STAT) requerida.',
+                        style: TextStyle(
+                          color: Colors.red.shade900,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Card(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -99,9 +126,22 @@ class _LabProcessExamPageState extends State<LabProcessExamPage> {
                     ),
                     if (order.patientDocument != null)
                       Text(
-                        order.patientDocument!,
+                        'Cédula/Documento: ${order.patientDocument!}',
                         style: const TextStyle(color: Colors.grey),
                       ),
+                    if (order.patientPhone != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.phone_outlined, size: 14, color: Colors.grey),
+                          const SizedBox(width: 6),
+                          Text(
+                            order.patientPhone!,
+                            style: const TextStyle(color: Colors.grey, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ],
                     const Divider(height: 24),
                     if (exam != null) ...[
                       Row(
@@ -168,6 +208,33 @@ class _LabProcessExamPageState extends State<LabProcessExamPage> {
                 'Resultados',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
+              if (exam != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.blue.shade200, width: 0.8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, color: Colors.blue.shade700, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Preparación/Referencia: ${exam.preparation}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade900,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               TextField(
                 controller: _resultController,

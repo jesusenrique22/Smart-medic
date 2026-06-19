@@ -19,6 +19,15 @@ export const listFacilities = async (_req: Request, res: Response) => {
   res.json(facilities.map(toApiDoc));
 };
 
+export const listLaboratories = async (_req: Request, res: Response) => {
+  const laboratories = await prisma.laboratory.findMany({
+    where: { isActive: true, serviceEnabled: true },
+    include: { services: true },
+    orderBy: { name: 'asc' },
+  });
+  res.json(laboratories.map(toApiDoc));
+};
+
 export const listDoctors = async (req: Request, res: Response) => {
   const where: {
     specialties?: { some: { specialtyId: string } };

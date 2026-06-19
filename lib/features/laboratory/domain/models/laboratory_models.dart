@@ -5,13 +5,26 @@ class Laboratory {
   final String name;
   final String logoUrl;
   final bool offersHomeService;
+  final List<LabService> services;
 
   Laboratory({
     required this.id,
     required this.name,
     required this.logoUrl,
     required this.offersHomeService,
+    this.services = const [],
   });
+
+  factory Laboratory.fromJson(Map<String, dynamic> json) {
+    final rawServices = json['services'] as List? ?? [];
+    return Laboratory(
+      id: json['id']?.toString() ?? '',
+      name: json['name'] as String? ?? '',
+      logoUrl: json['logoUrl'] as String? ?? 'https://images.unsplash.com/photo-1532187643603-ba119ca4109e?auto=format&fit=crop&q=80&w=600',
+      offersHomeService: json['offersHomeService'] as bool? ?? true,
+      services: rawServices.map((s) => LabService.fromJson(s as Map<String, dynamic>)).toList(),
+    );
+  }
 }
 
 class LabService {
@@ -28,6 +41,16 @@ class LabService {
     required this.price,
     required this.requirements,
   });
+
+  factory LabService.fromJson(Map<String, dynamic> json) {
+    return LabService(
+      id: json['id']?.toString() ?? '',
+      laboratoryId: json['laboratoryId']?.toString() ?? '',
+      name: json['name'] as String? ?? '',
+      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      requirements: json['requirements'] as String? ?? '',
+    );
+  }
 }
 
 class LabResult {

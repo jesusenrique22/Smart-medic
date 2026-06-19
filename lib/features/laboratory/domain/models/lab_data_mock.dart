@@ -6,7 +6,7 @@ class LabDataMock {
       id: 'lab-001',
       name: 'BioLab Central',
       logoUrl:
-          'https://images.unsplash.com/photo-1579152276508-2d29944ef71d?auto=format&fit=crop&q=80&w=100',
+          'https://images.unsplash.com/photo-1532187643603-ba119ca4109e?auto=format&fit=crop&q=80&w=600',
       offersHomeService: true,
     ),
   ];

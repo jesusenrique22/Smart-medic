@@ -91,6 +91,7 @@ export function mapEmergencyRequest(
     painLevel: row.painLevel,
     medicalHistory: row.medicalHistory,
     status: row.status,
+    paymentMethod: row.paymentMethod,
     quotedCost: row.quotedCost,
     etaMinutes: row.etaMinutes,
     ambulanceLat: row.ambulanceLat,
@@ -148,6 +149,7 @@ export async function createEmergencyRequest(params: {
   symptoms?: string;
   painLevel?: number;
   medicalHistory?: string;
+  paymentMethod?: string;
 }) {
   const facility = await prisma.medicalFacility.findFirst({
     where: {
@@ -158,11 +160,6 @@ export async function createEmergencyRequest(params: {
   });
   if (!facility) {
     throw new Error('Clínica no encontrada o no disponible');
-  }
-
-  const unit = await findAvailableUnit(params.facilityId);
-  if (!unit) {
-    throw new Error('No hay ambulancias disponibles en esta clínica');
   }
 
   let distanceKm = 5;
@@ -177,34 +174,24 @@ export async function createEmergencyRequest(params: {
   const quotedCost = Math.round((BASE_FARE + distanceKm * PER_KM_RATE) * 100) / 100;
   const etaMinutes = estimateEtaMinutes(distanceKm);
 
-  const initialAmbulanceLat = unit.latitude ?? facility.latitude ?? params.originLat;
-  const initialAmbulanceLng = unit.longitude ?? facility.longitude ?? params.originLng;
-
-  const request = await prisma.$transaction(async (tx) => {
-    await tx.ambulanceUnit.update({
-      where: { id: unit.id },
-      data: { status: AmbulanceUnitStatus.DISPATCHED },
-    });
-
-    return tx.emergencyRequest.create({
-      data: {
-        patientId: params.patientId,
-        facilityId: params.facilityId,
-        ambulanceUnitId: unit.id,
-        originLat: params.originLat,
-        originLng: params.originLng,
-        originAddress: params.originAddress,
-        symptoms: params.symptoms,
-        painLevel: params.painLevel,
-        medicalHistory: params.medicalHistory,
-        status: EmergencyRequestStatus.DISPATCHED,
-        quotedCost,
-        etaMinutes,
-        ambulanceLat: initialAmbulanceLat,
-        ambulanceLng: initialAmbulanceLng,
-      },
-      include: emergencyInclude,
-    });
+  const request = await prisma.emergencyRequest.create({
+    data: {
+      patientId: params.patientId,
+      facilityId: params.facilityId,
+      originLat: params.originLat,
+      originLng: params.originLng,
+      originAddress: params.originAddress,
+      symptoms: params.symptoms,
+      painLevel: params.painLevel,
+      medicalHistory: params.medicalHistory,
+      paymentMethod: params.paymentMethod ?? 'CASH',
+      status: EmergencyRequestStatus.REQUESTED,
+      quotedCost,
+      etaMinutes,
+      ambulanceLat: facility.latitude ?? params.originLat,
+      ambulanceLng: facility.longitude ?? params.originLng,
+    },
+    include: emergencyInclude,
   });
 
   const mapped = mapEmergencyRequest(request)!;
@@ -221,31 +208,98 @@ export async function createEmergencyRequest(params: {
     },
   ];
 
-  if (unit.driverId) {
-    broadcasts.push({
-      room: `user:${unit.driverId}`,
-      event: 'emergency:assigned',
-      payload: { emergency: mapped },
-    });
+  await pushRealtimeBroadcasts(broadcasts);
+  emitToFacility(params.facilityId, 'emergency:incoming', { emergency: mapped });
+
+  return mapped;
+}
+
+export async function listPendingFacilityRequests(userId: string) {
+  const facilityId = await getDriverFacilityRoom(userId);
+  if (!facilityId) {
+    throw new Error('El usuario no pertenece a ninguna clínica o unidad de ambulancia activa');
   }
-  if (unit.paramedicId) {
-    broadcasts.push({
-      room: `user:${unit.paramedicId}`,
-      event: 'emergency:assigned',
-      payload: { emergency: mapped },
-    });
+
+  const rows = await prisma.emergencyRequest.findMany({
+    where: {
+      facilityId,
+      status: EmergencyRequestStatus.REQUESTED,
+    },
+    include: emergencyInclude,
+    orderBy: { requestedAt: 'desc' },
+  });
+  return rows.map((r) => mapEmergencyRequest(r)!);
+}
+
+export async function acceptEmergencyRequest(requestId: string, driverId: string) {
+  const unit = await prisma.ambulanceUnit.findFirst({
+    where: {
+      isActive: true,
+      OR: [{ driverId }, { paramedicId: driverId }, { nurseId: driverId }],
+    },
+  });
+  if (!unit) {
+    throw new Error('No tienes ninguna unidad de ambulancia activa asignada');
   }
-  if (unit.nurseId) {
+
+  const request = await prisma.emergencyRequest.findUnique({
+    where: { id: requestId },
+  });
+  if (!request) {
+    throw new Error('Solicitud de emergencia no encontrada');
+  }
+  if (request.status !== EmergencyRequestStatus.REQUESTED) {
+    throw new Error('La solicitud ya fue tomada por otra unidad o cancelada');
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.ambulanceUnit.update({
+      where: { id: unit.id },
+      data: { status: AmbulanceUnitStatus.DISPATCHED },
+    });
+
+    return tx.emergencyRequest.update({
+      where: { id: requestId },
+      data: {
+        ambulanceUnitId: unit.id,
+        status: EmergencyRequestStatus.DISPATCHED,
+        ambulanceLat: unit.latitude ?? request.originLat,
+        ambulanceLng: unit.longitude ?? request.originLng,
+      },
+      include: emergencyInclude,
+    });
+  });
+
+  const mapped = mapEmergencyRequest(updated)!;
+
+  const broadcasts: RealtimeBroadcast[] = [
+    {
+      room: `emergency:${requestId}`,
+      event: 'emergency:updated',
+      payload: { emergency: mapped },
+    },
+    {
+      room: `user:${updated.patientId}`,
+      event: 'emergency:updated',
+      payload: { emergency: mapped },
+    },
+  ];
+
+  const crewIds = [
+    updated.ambulance?.driver?.id,
+    updated.ambulance?.paramedic?.id,
+    updated.ambulance?.nurse?.id,
+  ].filter(Boolean) as string[];
+
+  for (const id of crewIds) {
     broadcasts.push({
-      room: `user:${unit.nurseId}`,
+      room: `user:${id}`,
       event: 'emergency:assigned',
       payload: { emergency: mapped },
     });
   }
 
   await pushRealtimeBroadcasts(broadcasts);
-  emitToFacility(params.facilityId, 'emergency:incoming', { emergency: mapped });
-
   return mapped;
 }
 

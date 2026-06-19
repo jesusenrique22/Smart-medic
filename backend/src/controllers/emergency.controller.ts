@@ -7,6 +7,7 @@ import {
   UserRole,
 } from '../types/enums';
 import {
+  acceptEmergencyRequest,
   cancelEmergencyRequest,
   createAmbulanceUnit,
   createEmergencyChatMessage,
@@ -17,6 +18,7 @@ import {
   listFacilityAmbulances,
   listFacilityEmergencies,
   listPatientEmergencies,
+  listPendingFacilityRequests,
   updateAmbulanceLocation,
   updateAmbulanceUnit,
   updateEmergencyStatus,
@@ -32,6 +34,7 @@ export const postEmergency = async (req: AuthRequest, res: Response) => {
     symptoms,
     painLevel,
     medicalHistory,
+    paymentMethod,
   } = req.body as {
     facilityId?: string;
     originLat?: number;
@@ -40,6 +43,7 @@ export const postEmergency = async (req: AuthRequest, res: Response) => {
     symptoms?: string;
     painLevel?: number;
     medicalHistory?: string;
+    paymentMethod?: string;
   };
 
   if (!facilityId || originLat == null || originLng == null) {
@@ -58,6 +62,7 @@ export const postEmergency = async (req: AuthRequest, res: Response) => {
       symptoms,
       painLevel: painLevel != null ? Number(painLevel) : undefined,
       medicalHistory,
+      paymentMethod,
     });
     res.status(201).json(toApiDoc(emergency));
   } catch (e) {
@@ -253,6 +258,24 @@ export const patchClinicAmbulance = async (req: AuthRequest, res: Response) => {
       isActive,
     });
     res.json(toApiDoc(unit));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+};
+
+export const getPendingRequests = async (req: AuthRequest, res: Response) => {
+  try {
+    const items = await listPendingFacilityRequests(req.user!.id);
+    res.json(items.map(toApiDoc));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+  }
+};
+
+export const acceptEmergency = async (req: AuthRequest, res: Response) => {
+  try {
+    const emergency = await acceptEmergencyRequest(req.params.id, req.user!.id);
+    res.json(toApiDoc(emergency));
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }

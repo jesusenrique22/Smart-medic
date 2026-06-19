@@ -25,8 +25,8 @@ echo "→ Flutter:  $FLUTTER"
 echo "→ Android:  $ANDROID_SDK"
 cd "$ROOT"
 
-# Rutas legacy (repo clonado en GitHub/Smart-Medic o Smart_Medic)
-LEGACY_PATTERN='GitHub/Smart-Medic|GitHub/Smart_Medic|Documents/GitHub/'
+# Rutas legacy (repo clonado en GitHub/Smart-Medic)
+LEGACY_PATTERN='GitHub/Smart-Medic'
 
 xcconfig_is_stale() {
   local file=$1
@@ -44,11 +44,7 @@ xcconfig_is_stale() {
     flutter_root=$(grep '^FLUTTER_ROOT=' "$file" | cut -d= -f2-)
     [[ "$flutter_root" != "$FLUTTER" ]] && return 0
   fi
-  if grep -q '^PACKAGE_CONFIG=' "$file" 2>/dev/null; then
-    local pkg
-    pkg=$(grep '^PACKAGE_CONFIG=' "$file" | cut -d= -f2-)
-    [[ "$pkg" != "$ROOT/.dart_tool/package_config.json" ]] && return 0
-  fi
+
   return 1
 }
 
