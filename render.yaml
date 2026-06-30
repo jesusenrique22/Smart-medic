@@ -1,0 +1,80 @@
+# Smart Medic — Render Blueprint
+# https://render.com/docs/blueprint-spec
+#
+# Si ya tienes backend/gateway creados a mano, solo crea el Static Site «smart-medic-web»
+# o enlaza este blueprint en un proyecto nuevo.
+#
+# Secretos (Render Dashboard → Environment): DATABASE_URL, JWT_SECRET, INTERNAL_REALTIME_SECRET
+
+services:
+  # ── API REST + PostgreSQL (Neon) ──────────────────────────────────────────
+  - type: web
+    name: smart-medic-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: >-
+      corepack enable &&
+      pnpm install --frozen-lockfile &&
+      pnpm run build &&
+      pnpm exec prisma generate &&
+      pnpm exec prisma migrate deploy
+    startCommand: pnpm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: INTERNAL_REALTIME_SECRET
+        sync: false
+      - key: REALTIME_GATEWAY_URL
+        fromService:
+          name: smart-medic-gateway
+          type: web
+          property: host
+          transform: https
+      - key: APP_TIMEZONE
+        value: America/Caracas
+      - key: APP_TZ_OFFSET_MINUTES
+        value: "-240"
+
+  # ── WebSocket (Socket.IO) ─────────────────────────────────────────────────
+  - type: web
+    name: smart-medic-gateway
+    runtime: node
+    rootDir: realtime-gateway
+    plan: free
+    buildCommand: >-
+      corepack enable &&
+      pnpm install --frozen-lockfile &&
+      pnpm run build
+    startCommand: pnpm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        sync: false
+      - key: INTERNAL_REALTIME_SECRET
+        sync: false
+      - key: BACKEND_URL
+        fromService:
+          name: smart-medic-backend
+          type: web
+          property: host
+          transform: https
+
+  # ── Flutter web (build vía GitHub Actions → rama render-web) ─────────────
+  - type: web
+    name: smart-medic-web
+    runtime: static
+    branch: render-web
+    buildCommand: echo "Flutter web precompilado por GitHub Actions"
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

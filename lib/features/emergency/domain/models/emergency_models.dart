@@ -254,11 +254,13 @@ class EmergencyLocationUpdate {
   final String emergencyRequestId;
   final GeoPoint location;
   final int? etaMinutes;
+  final double? distanceRemainingKm;
 
   const EmergencyLocationUpdate({
     required this.emergencyRequestId,
     required this.location,
     this.etaMinutes,
+    this.distanceRemainingKm,
   });
 
   factory EmergencyLocationUpdate.fromPayload(Map<String, dynamic> json) {
@@ -269,6 +271,7 @@ class EmergencyLocationUpdate {
         longitude: JsonHelpers.doubleFromJson(json['longitude']) ?? 0,
       ),
       etaMinutes: json['etaMinutes'] as int?,
+      distanceRemainingKm: JsonHelpers.doubleFromJson(json['distanceRemainingKm']),
     );
   }
 }

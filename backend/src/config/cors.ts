@@ -5,6 +5,9 @@ import cors, { CorsOptions } from 'cors';
 const DEV_TUNNEL_ORIGIN =
   /^https:\/\/([a-z0-9-]+\.)*(devtunnels\.ms|github\.dev|githubpreview\.dev)(:\d+)?$/i;
 
+/** Render.com (frontend, backend y gateway en subdominios distintos). */
+const RENDER_ORIGIN = /^https:\/\/[a-z0-9-]+\.onrender\.com$/i;
+
 function parseExtraOrigins(): string[] {
   const raw = process.env.CORS_ORIGIN?.trim();
   if (!raw) return [];
@@ -14,6 +17,7 @@ function parseExtraOrigins(): string[] {
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
   if (DEV_TUNNEL_ORIGIN.test(origin)) return true;
+  if (RENDER_ORIGIN.test(origin)) return true;
   if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(origin)) {
     return true;
   }

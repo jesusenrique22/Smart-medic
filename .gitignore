@@ -76,6 +76,8 @@ android/local.properties
 .env
 .env.*
 !**/.env.example
+!.env.production.example
+!.env.production.local.example
 .env.local
 .env.*.local
 

@@ -1,0 +1,58 @@
+name: Deploy Flutter web to Render
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.env.production.example'
+      - 'scripts/build-web-production.sh'
+      - '.github/workflows/deploy-web-render.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Write production env
+        run: |
+          cat > .env.production.local <<EOF
+          API_BASE_URL=${{ secrets.RENDER_API_BASE_URL }}
+          SOCKET_URL=${{ secrets.RENDER_SOCKET_URL }}
+          EOF
+
+      - name: Build Flutter web
+        env:
+          API_BASE_URL: ${{ secrets.RENDER_API_BASE_URL }}
+          SOCKET_URL: ${{ secrets.RENDER_SOCKET_URL }}
+        run: |
+          if [[ -z "$API_BASE_URL" || -z "$SOCKET_URL" ]]; then
+            echo "::error::Define GitHub Secrets RENDER_API_BASE_URL y RENDER_SOCKET_URL"
+            exit 1
+          fi
+          chmod +x scripts/build-web-production.sh
+          ./scripts/build-web-production.sh
+
+      - name: Deploy to render-web branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: render-web
+          folder: build/web
+          single-commit: true
+          clean: true
+          commit-message: 'deploy: flutter web ${{ github.sha }}'

@@ -300,6 +300,7 @@ export async function acceptEmergencyRequest(requestId: string, driverId: string
   }
 
   await pushRealtimeBroadcasts(broadcasts);
+  emitToFacility(updated.facilityId, 'emergency:updated', { emergency: mapped });
   return mapped;
 }
 
@@ -476,9 +477,27 @@ export async function updateAmbulanceLocation(
         notIn: [EmergencyRequestStatus.COMPLETED, EmergencyRequestStatus.CANCELLED],
       },
     },
-    include: { ambulance: true },
+    include: { ambulance: true, facility: true },
   });
   if (!request) throw new Error('Solicitud no encontrada o no asignada a este conductor');
+
+  const toClinic = [
+    EmergencyRequestStatus.PATIENT_ONBOARD,
+    EmergencyRequestStatus.EN_ROUTE,
+    EmergencyRequestStatus.ARRIVED,
+  ].includes(request.status as EmergencyRequestStatus);
+
+  const destLat = toClinic && request.facility?.latitude != null
+    ? request.facility.latitude
+    : request.originLat;
+  const destLng = toClinic && request.facility?.longitude != null
+    ? request.facility.longitude
+    : request.originLng;
+
+  const distanceRemainingKm =
+    Math.round(haversineKm(latitude, longitude, destLat, destLng) * 100) / 100;
+  const computedEta =
+    etaMinutes ?? estimateEtaMinutes(distanceRemainingKm);
 
   const now = new Date();
   await prisma.$transaction([
@@ -487,7 +506,7 @@ export async function updateAmbulanceLocation(
       data: {
         ambulanceLat: latitude,
         ambulanceLng: longitude,
-        ...(etaMinutes != null ? { etaMinutes } : {}),
+        etaMinutes: computedEta,
       },
     }),
     prisma.ambulanceUnit.update({
@@ -504,7 +523,8 @@ export async function updateAmbulanceLocation(
     emergencyRequestId: requestId,
     latitude,
     longitude,
-    etaMinutes: etaMinutes ?? request.etaMinutes,
+    etaMinutes: computedEta,
+    distanceRemainingKm,
   };
 
   await pushRealtimeBroadcasts([

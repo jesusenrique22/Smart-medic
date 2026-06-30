@@ -14,7 +14,8 @@ import '../../../emergency/application/emergency_tracking_controller.dart';
 import '../../../emergency/domain/models/emergency_models.dart';
 import '../../../emergency/domain/repositories/emergency_repository.dart';
 import '../../../notifications/presentation/widgets/notification_badge.dart';
-import '../widgets/ambulance_emergency_map.dart';
+import '../../../emergency/presentation/widgets/ambulance_delivery_tracking_ui.dart';
+import '../../../emergency/presentation/widgets/live_ambulance_tracking_map.dart';
 
 /// Panel compartido por conductor, paramédico y enfermero de ambulancia.
 class AmbulanceCrewDashboard extends StatefulWidget {
@@ -35,6 +36,7 @@ class _AmbulanceCrewDashboardState extends State<AmbulanceCrewDashboard>
   String? _error;
   Timer? _refreshTimer;
   StreamSubscription<Map<String, dynamic>>? _incomingSub;
+  StreamSubscription<Map<String, dynamic>>? _updatedSub;
 
   late final AnimationController _pulseController;
   late final AnimationController _slideController;
@@ -101,6 +103,8 @@ class _AmbulanceCrewDashboardState extends State<AmbulanceCrewDashboard>
         );
       }
     });
+
+    _updatedSub = AppRealtime.chatSocket.onEmergencyUpdated.listen((_) => _load());
   }
 
   @override
@@ -110,6 +114,7 @@ class _AmbulanceCrewDashboardState extends State<AmbulanceCrewDashboard>
     _alertPulseController.dispose();
     _refreshTimer?.cancel();
     _incomingSub?.cancel();
+    _updatedSub?.cancel();
     _publisher?.stop();
     super.dispose();
   }
@@ -1042,7 +1047,10 @@ class AmbulanceEmergencyDetailScreen extends StatefulWidget {
 class _AmbulanceEmergencyDetailScreenState
     extends State<AmbulanceEmergencyDetailScreen> {
   late final EmergencyTrackingController _controller;
+  DriverLocationPublisher? _publisher;
   bool _updatingStatus = false;
+
+  bool get _isDriver => AppSession.activeRole == Role.driver;
 
   @override
   void initState() {
@@ -1050,7 +1058,17 @@ class _AmbulanceEmergencyDetailScreenState
     _controller = sl<EmergencyTrackingController>();
     _controller.addListener(_onChanged);
     if (widget.emergencyId.isNotEmpty) {
-      _controller.start(widget.emergencyId);
+      unawaited(_startTracking());
+    }
+  }
+
+  Future<void> _startTracking() async {
+    await _controller.start(widget.emergencyId);
+    if (!mounted || !_isDriver) return;
+    final em = _controller.emergency;
+    if (em != null && !em.status.isTerminal) {
+      _publisher ??= sl<DriverLocationPublisher>();
+      await _publisher!.start(em);
     }
   }
 
@@ -1062,6 +1080,7 @@ class _AmbulanceEmergencyDetailScreenState
   void dispose() {
     _controller.removeListener(_onChanged);
     _controller.dispose();
+    unawaited(_publisher?.stop());
     super.dispose();
   }
 
@@ -1141,7 +1160,16 @@ class _AmbulanceEmergencyDetailScreenState
           Expanded(
             child: Stack(
               children: [
-                AmbulanceEmergencyMap(request: emergency),
+                LiveAmbulanceTrackingMap(
+                  request: emergency,
+                  trail: _controller.locationTrail,
+                  routePoints: _controller.routePoints,
+                  distanceRemainingKm: _controller.distanceRemainingKm,
+                  ambulanceBearing: _controller.ambulanceBearing,
+                  followAmbulance: _controller.followAmbulance,
+                  isDriverView: true,
+                  onFollowChanged: _controller.setFollowAmbulance,
+                ),
                 // Back button
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 8,
@@ -1211,7 +1239,17 @@ class _AmbulanceEmergencyDetailScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Destination
+                      TrackingStatusTimeline(
+                        status: emergency.status,
+                        compact: true,
+                      ),
+                      const SizedBox(height: 16),
+                      DriverNavigationPanel(
+                        emergency: emergency,
+                        distanceKm: _controller.distanceRemainingKm,
+                      ),
+                      const SizedBox(height: 16),
+                      // Destino / clínica
                       Row(
                         children: [
                           Container(

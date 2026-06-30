@@ -31,3 +31,20 @@ flutter run                          # simulador
 ```
 
 Guía: [docs/DEV_TERMINALS.md](docs/DEV_TERMINALS.md) · Dev Tunnel: `TUNNEL_PREFIX` en `.env`
+
+## Producción (Render + Neon)
+
+| Servicio | Render | Docs |
+|----------|--------|------|
+| API | Web Service `backend/` | [DEPLOY_RENDER.md](docs/DEPLOY_RENDER.md) |
+| Gateway | Web Service `realtime-gateway/` | idem |
+| Flutter web | Static Site (rama `render-web`) | idem |
+| PostgreSQL | Neon | `DATABASE_URL` en backend |
+
+```bash
+# Compilar front con URLs de Render
+cp .env.production.example .env.production.local   # edita tus URLs
+./scripts/build-web-production.sh
+
+# O automático: GitHub Secrets RENDER_API_BASE_URL + RENDER_SOCKET_URL → push a main
+```
